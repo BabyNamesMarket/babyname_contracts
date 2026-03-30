@@ -1,0 +1,21 @@
+# Compiler output
+cache/
+out/
+
+# Build artifacts (abi/ is tracked for the npm package)
+
+# Environment
+.env
+
+# Broadcast
+broadcast/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+data/merkle-tree.json
+
+# Generated SVG previews (local build output)
+/previews/

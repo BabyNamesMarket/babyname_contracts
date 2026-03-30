@@ -1,0 +1,107 @@
+name: Generate SVG Previews
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  generate-previews:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ github.head_ref }}
+          token: ${{ github.token }}
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Generate previews from contract
+        run: |
+          mkdir -p previews
+          forge script scripts/preview/GeneratePreviews.s.sol
+
+      - name: Decode data URIs to SVGs
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node scripts/preview/decode-previews.js
+
+      - name: Convert SVGs to PNGs
+        run: |
+          sudo apt-get install -y --quiet librsvg2-bin
+          for f in previews/*.svg; do
+            rsvg-convert -f png -w 800 "$f" -o "${f%.svg}.png"
+            echo "Converted: $f -> ${f%.svg}.png"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: svg-previews
+          path: previews/
+          retention-days: 30
+
+      - name: Commit preview images to PR branch
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Only commit PNGs (not .uri or .svg intermediates)
+          cp previews/*.png docs/previews/ 2>/dev/null || mkdir -p docs/previews && cp previews/*.png docs/previews/
+          git add docs/previews/*.png
+          git diff --cached --quiet && echo "No preview changes" && exit 0
+          git commit -m "Update NFT preview images [skip ci]"
+          git push
+
+      - name: Post preview comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs   = require('fs');
+            const path = require('path');
+
+            const prNumber   = context.issue.number;
+            const { owner, repo } = context.repo;
+            const branch = context.payload.pull_request.head.ref;
+            const sha    = context.payload.pull_request.head.sha.slice(0, 7);
+
+            const pngFiles = fs.readdirSync('docs/previews').filter(f => f.endsWith('.png')).sort();
+            if (pngFiles.length === 0) {
+              console.log('No PNG previews found');
+              return;
+            }
+
+            const marker = '<!-- bet-slip-previews -->';
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            let body = `${marker}\n## Bet Slip NFT Previews\n\n`;
+            body += `Rendered from \`BetSlipSVG.sol\` at \`${sha}\` · [Artifacts](${runUrl})\n\n`;
+
+            for (const file of pngFiles) {
+              const name = path.basename(file, '.png').replace(/-/g, ' ');
+              const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/docs/previews/${file}`;
+              body += `### ${name}\n![${name}](${rawUrl})\n\n`;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: prNumber
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+            }
+
+            console.log(`Posted preview comment with ${pngFiles.length} images`);

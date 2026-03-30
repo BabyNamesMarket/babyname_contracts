@@ -1,0 +1,26 @@
+{
+  "name": "@babynamesmarket/contracts",
+  "version": "0.1.0",
+  "description": "BabyNames prediction market contracts (LMSR) - ABIs and deployment addresses",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./abi/*": "./abi/*",
+    "./deployments/*": "./deployments/*"
+  },
+  "files": [
+    "abi/",
+    "deployments/",
+    "index.js"
+  ],
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "export-abi": "make export-abi"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BabyNamesMarket/babyname_contracts"
+  },
+  "license": "MIT"
+}

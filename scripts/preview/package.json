@@ -1,0 +1,9 @@
+{
+  "name": "@babynamesmarket/preview-generator",
+  "version": "1.0.0",
+  "description": "Generates SVG preview images for Baby Name Market bet slip NFTs",
+  "main": "generate.js",
+  "scripts": {
+    "generate": "node generate.js"
+  }
+}

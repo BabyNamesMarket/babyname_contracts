@@ -39,7 +39,7 @@ deploy-local:
 
 # Base Sepolia
 deploy-base-sepolia:
-	forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url $(BASE_SEPOLIA_RPC_URL) --broadcast --verify
+	bash script/deploy-base-sepolia.sh
 
 # Tempo testnet (uses shell script due to Tempo gas estimation requirements)
 deploy-tempo-testnet:

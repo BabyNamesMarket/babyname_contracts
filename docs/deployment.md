@@ -10,11 +10,18 @@ cp .env.example .env
 ## Base Sepolia
 
 ```bash
-export COLLATERAL_TOKEN_ADDRESS="$TOKEN_ADDRESS"
-forge script script/DeployTestnet.s.sol:DeployTestnet --rpc-url "$BASE_SEPOLIA_RPC_URL" --broadcast
+make deploy-base-sepolia
 ```
 
-Deploys PredictionMarket and Launchpad, and uses the configured collateral token. If `COLLATERAL_TOKEN_ADDRESS` is unset, the script deploys a fresh `TestUSDC`.
+Deploys PredictionMarket and Launchpad, uses the configured collateral token, then syncs Goldsky in `../babynames_market/goldsky/` by:
+
+- copying fresh `PredictionMarket` and `Launchpad` ABIs
+- updating `goldsky.config.json` addresses
+- deriving `startBlock` from the actual deployment tx block
+
+If `COLLATERAL_TOKEN_ADDRESS` is unset, the script deploys a fresh `TestUSDC`.
+
+Set `GOLDSKY_AUTO_DEPLOY=true` if you also want the sync script to run the `goldsky subgraph delete` and `goldsky subgraph deploy` commands after updating the config.
 
 ## Tempo Testnet
 

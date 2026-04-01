@@ -11,6 +11,11 @@ function getDeployment(chainId) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function getGoldskyConfig(chainId) {
+  const deployment = getDeployment(chainId);
+  return deployment && deployment.goldsky ? deployment.goldsky : null;
+}
+
 const CHAIN_IDS = {
   mainnet: 1,
   sepolia: 11155111,
@@ -25,5 +30,6 @@ module.exports = {
   LaunchpadABI,
   OutcomeTokenABI,
   getDeployment,
+  getGoldskyConfig,
   CHAIN_IDS,
 };

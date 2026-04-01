@@ -73,10 +73,17 @@ npm install github:BabyNamesMarket/contracts
 ```
 
 ```javascript
-const { PredictionMarketABI, LaunchpadABI, getDeployment, CHAIN_IDS }
+const {
+  PredictionMarketABI,
+  LaunchpadABI,
+  getDeployment,
+  getGoldskyConfig,
+  CHAIN_IDS,
+}
   = require("@babynamesmarket/contracts");
 
 const deploy = getDeployment(CHAIN_IDS.baseSepolia);
+const goldsky = getGoldskyConfig(CHAIN_IDS.baseSepolia);
 ```
 
 ## Documentation

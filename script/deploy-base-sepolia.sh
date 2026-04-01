@@ -17,4 +17,4 @@ if [ $STATUS -ne 0 ] && [ ! -f "deployments/84532.json" ]; then
   exit $STATUS
 fi
 
-node scripts/sync-goldsky-base-sepolia.js
+node scripts/update-base-sepolia-metadata.js

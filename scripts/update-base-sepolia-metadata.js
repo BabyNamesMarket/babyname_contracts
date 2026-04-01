@@ -3,12 +3,8 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
-const FRONTEND_ROOT = path.resolve(ROOT, "../babynames_market");
-const GOLDSKY_ROOT = path.join(FRONTEND_ROOT, "goldsky");
 const DEPLOYMENT_PATH = path.join(ROOT, "deployments/84532.json");
 const BROADCAST_PATH = path.join(ROOT, "broadcast/DeployTestnet.s.sol/84532/run-latest.json");
-const GOLDSKY_CONFIG_PATH = path.join(GOLDSKY_ROOT, "goldsky.config.json");
-const GOLDSKY_ABI_DIR = path.join(GOLDSKY_ROOT, "abis");
 
 function requireFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -22,12 +18,6 @@ function readJson(filePath) {
 
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n");
-}
-
-function copyAbi(name) {
-  const src = path.join(ROOT, "abi", `${name}.json`);
-  const dst = path.join(GOLDSKY_ABI_DIR, `${name}.json`);
-  fs.copyFileSync(src, dst);
 }
 
 function getCreateTxHash(broadcast, contractName, expectedAddress) {
@@ -64,59 +54,13 @@ function getBlockNumber(txHash, rpcUrl) {
   return typeof blockValue === "string" ? Number(blockValue) : blockValue;
 }
 
-function syncConfig(startBlock, deployment) {
-  const config = readJson(GOLDSKY_CONFIG_PATH);
-  config.abis = {
-    PredictionMarket: { path: "./abis/PredictionMarket.json" },
-    Launchpad: { path: "./abis/Launchpad.json" },
-  };
-  config.chains = ["base-sepolia"];
-  config.instances = [
-    {
-      abi: "PredictionMarket",
-      address: deployment.PredictionMarket,
-      startBlock,
-      chain: "base-sepolia",
-    },
-    {
-      abi: "Launchpad",
-      address: deployment.Launchpad,
-      startBlock,
-      chain: "base-sepolia",
-    },
-  ];
-  writeJson(GOLDSKY_CONFIG_PATH, config);
-}
-
-function maybeDeploySubgraph() {
-  if (process.env.GOLDSKY_AUTO_DEPLOY !== "true") return;
-
-  execFileSync(
-    "goldsky",
-    ["subgraph", "delete", "babynames-market-base-sepolia/1.0.0", "--force"],
-    { cwd: FRONTEND_ROOT, stdio: "inherit" }
-  );
-  execFileSync(
-    "goldsky",
-    ["subgraph", "deploy", "babynames-market/1.0.0", "--from-abi", "goldsky/goldsky.config.json"],
-    { cwd: FRONTEND_ROOT, stdio: "inherit" }
-  );
-}
-
 function main() {
   requireFile(DEPLOYMENT_PATH);
   requireFile(BROADCAST_PATH);
-  requireFile(GOLDSKY_CONFIG_PATH);
-  requireFile(path.join(ROOT, "abi/PredictionMarket.json"));
-  requireFile(path.join(ROOT, "abi/Launchpad.json"));
-  fs.mkdirSync(GOLDSKY_ABI_DIR, { recursive: true });
 
   const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
   const deployment = readJson(DEPLOYMENT_PATH);
   const broadcast = readJson(BROADCAST_PATH);
-
-  copyAbi("PredictionMarket");
-  copyAbi("Launchpad");
 
   const pmCreateTx = getCreateTxHash(broadcast, "PredictionMarket", deployment.PredictionMarket);
   const launchpadCreateTx = getCreateTxHash(broadcast, "Launchpad", deployment.Launchpad);
@@ -125,15 +69,41 @@ function main() {
     getBlockNumber(launchpadCreateTx, rpcUrl)
   ) - 1;
 
-  syncConfig(startBlock, deployment);
-  maybeDeploySubgraph();
+  deployment.goldsky = {
+    projectId: "project_cmnfucw0yiuar01y0347j7weu",
+    subgraph: "babynames-market-base-sepolia/1.0.0",
+    chain: "base-sepolia",
+    endpoint:
+      "https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/babynames-market-base-sepolia/1.0.0/gn",
+    startBlock,
+    abis: {
+      PredictionMarket: "./abi/PredictionMarket.json",
+      Launchpad: "./abi/Launchpad.json",
+    },
+    instances: [
+      {
+        abi: "PredictionMarket",
+        address: deployment.PredictionMarket,
+        startBlock,
+        chain: "base-sepolia",
+      },
+      {
+        abi: "Launchpad",
+        address: deployment.Launchpad,
+        startBlock,
+        chain: "base-sepolia",
+      },
+    ],
+  };
+
+  writeJson(DEPLOYMENT_PATH, deployment);
 
   process.stdout.write(
-    `Goldsky synced:\n`
+    `Deployment metadata updated:\n`
       + `PredictionMarket=${deployment.PredictionMarket}\n`
       + `Launchpad=${deployment.Launchpad}\n`
       + `startBlock=${startBlock}\n`
-      + `config=${GOLDSKY_CONFIG_PATH}\n`
+      + `deployment=${DEPLOYMENT_PATH}\n`
   );
 }
 

@@ -13,15 +13,12 @@ cp .env.example .env
 make deploy-base-sepolia
 ```
 
-Deploys PredictionMarket and Launchpad, uses the configured collateral token, then syncs Goldsky in `../babynames_market/goldsky/` by:
+Deploys PredictionMarket and Launchpad, uses the configured collateral token, then updates the local `deployments/84532.json` artifact with Goldsky metadata by:
 
-- copying fresh `PredictionMarket` and `Launchpad` ABIs
-- updating `goldsky.config.json` addresses
 - deriving `startBlock` from the actual deployment tx block
+- storing the Goldsky endpoint, subgraph name, and instance config alongside the deployed addresses
 
 If `COLLATERAL_TOKEN_ADDRESS` is unset, the script deploys a fresh `TestUSDC`.
-
-Set `GOLDSKY_AUTO_DEPLOY=true` if you also want the sync script to run the `goldsky subgraph delete` and `goldsky subgraph deploy` commands after updating the config.
 
 ## Tempo Testnet
 

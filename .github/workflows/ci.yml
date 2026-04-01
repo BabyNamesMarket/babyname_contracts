@@ -27,7 +27,7 @@ jobs:
         run: forge test -vvv
 
       - name: Coverage
-        run: forge coverage
+        run: forge coverage --ir-minimum
 
       - name: Gas snapshot
         run: forge snapshot --check || forge snapshot

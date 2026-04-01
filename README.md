@@ -2,16 +2,16 @@
 
 LMSR prediction markets for SSA baby name rankings.
 
-Users bet on whether baby names will appear in the Social Security Administration's annual top rankings. Markets are bootstrapped through commitments — propose a name, commit capital, and once enough interest accumulates the market launches with all participants getting the same fair price.
+Users bet on whether baby names will appear in the Social Security Administration's annual top rankings. Markets are bootstrapped through commitments: propose a name, commit capital, wait for the scheduled launch time, then claim the resulting outcome tokens once the live market is created.
 
 **[Documentation](https://babynamesmarket.github.io/babyname_contracts/)** | **[API Reference](https://babynamesmarket.github.io/babyname_contracts/api/prediction-market.html)**
 
 ## How It Works
 
 ```
-1. Propose a name      →  launchpad.propose("olivia", 2025, proof, [$5, $0])
+1. Propose a name      →  launchpad.propose("olivia", 2025, GIRL, proof, [$5, $0])
 2. Others commit       →  launchpad.commit(proposalId, [$10, $0])
-3. Market launches     →  launchpad.launchMarket(proposalId)
+3. Launch time arrives →  launchpad.launchMarket(proposalId)
 4. Claim tokens        →  launchpad.claimShares(proposalId)
 5. Trade freely        →  predictionMarket.trade(...)
 6. Oracle resolves     →  predictionMarket.resolveMarketWithPayoutSplit(...)
@@ -23,7 +23,7 @@ Users bet on whether baby names will appear in the Social Security Administratio
 | Contract | Description |
 |----------|-------------|
 | **PredictionMarket** | LS-LMSR market maker with 3% trading fee |
-| **Launchpad** | Commitment bootstrapping with 5% fee, year/region scoping |
+| **Launchpad** | Commitment bootstrapping with 5% fee, gender/year/region scoping |
 | **OutcomeToken** | ERC20 per outcome (YES/NO), 6 decimals |
 | **RewardDistributor** | Merkle-based USDC reward distribution |
 
@@ -36,25 +36,28 @@ Based on [Context Markets](https://github.com/contextwtf/contracts), used under 
 | Commitment | 5% | At commit | Funds phantom shares (market depth) + protocol revenue |
 | Trading | 3% | Each trade | protocol revenue (skimmed before LMSR math) |
 
-Commitment fees are refunded in full if the market never launches.
+Commitment fees are separated at commit time. Proposals launch into a live market on schedule; unspent launch budget is claimable as a refund after launch.
 
 ## Market Scoping
 
-Markets are unique per **(name, year, region)**:
-- `propose("olivia", 2025, ...)` — national ranking
-- `proposeRegional("olivia", 2025, "CA", ...)` — California state ranking
+Markets are unique per **(name, gender, year, region)**:
+- `propose("olivia", 2025, GIRL, ...)` — national ranking
+- `proposeRegional("olivia", 2025, GIRL, "CA", ...)` — California state ranking
+
+Names are lowercased for validation and uniqueness. Merkle roots and manual approvals are also gender-specific.
 
 50 US states prepopulated. Years locked by default — admin opens with `openYear(2025)`.
 
 ## Deployments
 
-### Base Sepolia (84532) — verified
+### Base Sepolia (84532)
 
 | Contract | Address |
 |----------|---------|
-| PredictionMarket | [`0x168a...7E366`](https://sepolia.basescan.org/address/0x168a1808b563224b0AA69FA3bb7214940ac7E366) |
-| Launchpad | [`0x3c1f...974f`](https://sepolia.basescan.org/address/0x3c1fc7971b0e965eC76cce38108AE2d7c1A6974f) |
-| TestUSDC | [`0x4e9F...d49bc`](https://sepolia.basescan.org/address/0x4e9F02904c36F7CeB044eB53112Eaf3276fD49bc) |
+| PredictionMarket | [`0x7000...6F6c`](https://sepolia.basescan.org/address/0x7000667CF33833F97120a13b4D12A795142f6F6c) |
+| Launchpad | [`0x08ED...882b`](https://sepolia.basescan.org/address/0x08EDA78b3434A7774Cb4a012B2D7c8231F09882b) |
+| TestUSDC | [`0x43fA...A575`](https://sepolia.basescan.org/address/0x43fAbD625f96b93edAC2F370a2fe246b2E09A575) |
+| RewardDistributor | [`0x5B74...9Fe0`](https://sepolia.basescan.org/address/0x5B740001E88B2df9e96e84B75f7150496fA19Fe0) |
 
 ## Quick Start
 
@@ -62,7 +65,7 @@ Markets are unique per **(name, year, region)**:
 git clone --recurse-submodules https://github.com/BabyNamesMarket/contracts
 cd babynames_contracts
 forge build
-forge test -vv     # 96 tests
+forge test -vv
 ```
 
 ## npm Package

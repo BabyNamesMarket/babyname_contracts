@@ -45,6 +45,19 @@
   },
   {
     "type": "function",
+    "name": "MIN_TOTAL_COMMITMENT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "addRegion",
     "inputs": [
       {
@@ -76,6 +89,11 @@
         "internalType": "bytes"
       },
       {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
         "name": "year",
         "type": "uint16",
         "internalType": "uint16"
@@ -86,7 +104,7 @@
         "internalType": "string"
       },
       {
-        "name": "deadline",
+        "name": "launchTs",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -108,6 +126,11 @@
         "name": "name",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
       }
     ],
     "outputs": [],
@@ -128,19 +151,6 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "batchLaunchDate",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -365,6 +375,11 @@
         "internalType": "string"
       },
       {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
         "name": "year",
         "type": "uint16",
         "internalType": "uint16"
@@ -421,7 +436,12 @@
             "internalType": "string[]"
           },
           {
-            "name": "deadline",
+            "name": "gender",
+            "type": "uint8",
+            "internalType": "enum Launchpad.Gender"
+          },
+          {
+            "name": "launchTs",
             "type": "uint256",
             "internalType": "uint256"
           },
@@ -503,6 +523,11 @@
         "name": "name",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
       },
       {
         "name": "year",
@@ -624,6 +649,11 @@
         "internalType": "string"
       },
       {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
         "name": "proof",
         "type": "bytes32[]",
         "internalType": "bytes32[]"
@@ -705,7 +735,13 @@
   {
     "type": "function",
     "name": "namesMerkleRoot",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -833,6 +869,11 @@
         "internalType": "uint16"
       },
       {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
         "name": "proof",
         "type": "bytes32[]",
         "internalType": "bytes32[]"
@@ -854,6 +895,24 @@
   },
   {
     "type": "function",
+    "name": "proposeName",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "proposeRegional",
     "inputs": [
       {
@@ -865,6 +924,11 @@
         "name": "year",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
       },
       {
         "name": "region",
@@ -904,6 +968,11 @@
         "name": "year",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
       },
       {
         "name": "proof",
@@ -956,6 +1025,44 @@
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "proposedNames",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "questionIdToProposal",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1043,19 +1150,6 @@
   },
   {
     "type": "function",
-    "name": "setBatchLaunchDate",
-    "inputs": [
-      {
-        "name": "_date",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setCommitmentFeeBps",
     "inputs": [
       {
@@ -1111,6 +1205,11 @@
     "name": "setNamesMerkleRoot",
     "inputs": [
       {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
         "name": "_root",
         "type": "bytes32",
         "internalType": "bytes32"
@@ -1164,6 +1263,24 @@
     "inputs": [
       {
         "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setYearLaunchDate",
+    "inputs": [
+      {
+        "name": "year",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "_date",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1262,6 +1379,25 @@
   },
   {
     "type": "function",
+    "name": "yearLaunchDate",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "yearOpen",
     "inputs": [
       {
@@ -1278,25 +1414,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "BatchLaunchDateUpdated",
-    "inputs": [
-      {
-        "name": "oldDate",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "newDate",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -1488,6 +1605,37 @@
         "type": "string",
         "indexed": false,
         "internalType": "string"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum Launchpad.Gender"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NameProposed",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
+        "name": "proposer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1496,6 +1644,12 @@
     "type": "event",
     "name": "NamesMerkleRootUpdated",
     "inputs": [
+      {
+        "name": "gender",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum Launchpad.Gender"
+      },
       {
         "name": "oldRoot",
         "type": "bytes32",
@@ -1630,6 +1784,12 @@
         "internalType": "string"
       },
       {
+        "name": "gender",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum Launchpad.Gender"
+      },
+      {
         "name": "year",
         "type": "uint16",
         "indexed": false,
@@ -1648,7 +1808,7 @@
         "internalType": "address"
       },
       {
-        "name": "deadline",
+        "name": "launchTs",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1785,6 +1945,31 @@
   },
   {
     "type": "event",
+    "name": "YearLaunchDateUpdated",
+    "inputs": [
+      {
+        "name": "year",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      },
+      {
+        "name": "oldDate",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newDate",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "YearOpened",
     "inputs": [
       {
@@ -1813,6 +1998,11 @@
   },
   {
     "type": "error",
+    "name": "CommitmentsFinal",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "DeadlinePassed",
     "inputs": []
   },
@@ -1833,6 +2023,11 @@
   },
   {
     "type": "error",
+    "name": "DuplicateQuestionId",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "FeeTooHigh",
     "inputs": []
   },
@@ -1844,6 +2039,16 @@
   {
     "type": "error",
     "name": "InvalidDeadline",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidFee",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidGender",
     "inputs": []
   },
   {

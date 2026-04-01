@@ -76,7 +76,7 @@ contract LaunchpadEdgeTest is Test {
         amounts[1] = noAmt;
         bytes32[] memory proof = new bytes32[](0);
         vm.prank(user);
-        proposalId = launchpad.propose(_name, year, proof, amounts);
+        proposalId = launchpad.propose(_name, year, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     function _commitAs(address user, bytes32 proposalId, uint256 yesAmt, uint256 noAmt) internal {
@@ -85,6 +85,11 @@ contract LaunchpadEdgeTest is Test {
         amounts[1] = noAmt;
         vm.prank(user);
         launchpad.commit(proposalId, amounts);
+    }
+
+    function _warpToLaunch(bytes32 proposalId) internal {
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        vm.warp(info.launchTs);
     }
 
     // ========== 1. FEE CAP — EXCESS TO TREASURY ==========
@@ -96,6 +101,7 @@ contract LaunchpadEdgeTest is Test {
 
         uint256 treasuryBefore = usdc.balanceOf(treasury);
 
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         uint256 treasuryAfter = usdc.balanceOf(treasury);
@@ -118,9 +124,7 @@ contract LaunchpadEdgeTest is Test {
         // $1 committed, net = $0.95, fee = $0.05
         bytes32 proposalId = _proposeAs(alice, "Tiny", 2025, 1e6, 0);
 
-        // Below threshold, wait for timeout
-        vm.warp(block.timestamp + 24 hours);
-
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -144,13 +148,42 @@ contract LaunchpadEdgeTest is Test {
         console2.log("Tiny commitment - Alice YES shares:", aliceYes);
     }
 
+    function test_oneSidedCommitment_marketStillLaunches() public {
+        bytes32 proposalId = _proposeAs(alice, "OneSided", 2025, 100e6, 0);
+
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.LAUNCHED));
+        assertTrue(info.marketId != bytes32(0));
+
+        PredictionMarket.MarketInfo memory mInfo = pm.getMarketInfo(info.marketId);
+        assertEq(mInfo.outcomeTokens.length, 2);
+
+        vm.prank(alice);
+        launchpad.claimShares(proposalId);
+
+        uint256 aliceYes = IERC20(mInfo.outcomeTokens[0]).balanceOf(alice);
+        assertTrue(aliceYes > 0, "one-sided commitment should still produce claimable shares");
+    }
+
+    function test_subDollarCommitment_cannotLaunch() public {
+        // $0.999999 committed
+        bytes32 proposalId = _proposeAs(alice, "TooSmall", 2025, 999_999, 0);
+
+        _warpToLaunch(proposalId);
+
+        vm.expectRevert(Launchpad.BelowThreshold.selector);
+        launchpad.launchMarket(proposalId);
+    }
+
     // ========== 3. LAUNCH BEFORE BATCH DATE REVERTS ==========
 
     function test_launchBeforeBatchDate_reverts() public {
         uint256 batchDate = block.timestamp + 10 days;
-        launchpad.setBatchLaunchDate(batchDate);
+        launchpad.setYearLaunchDate(2025, batchDate);
 
-        // Create pre-batch proposal (deadline 7 days < batchDate 10 days)
         bytes32 proposalId = _proposeAs(alice, "PreBatch", 2025, 100e6, 100e6);
 
         vm.expectRevert(Launchpad.NotEligibleForLaunch.selector);
@@ -161,15 +194,17 @@ contract LaunchpadEdgeTest is Test {
 
     function test_launchAfterBatchDate_postBatchRulesApply() public {
         uint256 batchDate = block.timestamp + 1 days;
-        launchpad.setBatchLaunchDate(batchDate);
+        launchpad.setYearLaunchDate(2025, batchDate);
 
         // Warp past batch date
         vm.warp(batchDate + 1);
 
-        // Create post-batch proposal (deadline > batchDate since batchDate already passed)
         bytes32 proposalId = _proposeAs(alice, "PostBatch", 2025, 100e6, 100e6);
 
-        // Post-batch: net = $200 * 0.95 = $190 >= $10 threshold, should succeed immediately
+        vm.expectRevert(Launchpad.NotEligibleForLaunch.selector);
+        launchpad.launchMarket(proposalId);
+
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -180,6 +215,7 @@ contract LaunchpadEdgeTest is Test {
 
     function test_doubleClaim_reverts() public {
         bytes32 proposalId = _proposeAs(alice, "DoubleClaim", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         vm.prank(alice);
@@ -190,13 +226,13 @@ contract LaunchpadEdgeTest is Test {
         launchpad.claimShares(proposalId);
     }
 
-    // ========== 6. WITHDRAW BEFORE EXPIRY REVERTS ==========
+    // ========== 6. WITHDRAW DISABLED ==========
 
-    function test_withdrawBeforeExpiry_reverts() public {
+    function test_withdrawBeforeLaunch_reverts_commitmentsFinal() public {
         bytes32 proposalId = _proposeAs(alice, "Early", 2025, 5e6, 5e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.NotWithdrawable.selector);
+        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 
@@ -211,10 +247,10 @@ contract LaunchpadEdgeTest is Test {
         launchpad.setMaxCreationFee(20e6);
         assertEq(launchpad.maxCreationFee(), 20e6);
 
-        // setBatchLaunchDate
+        // setYearLaunchDate
         uint256 newDate = block.timestamp + 30 days;
-        launchpad.setBatchLaunchDate(newDate);
-        assertEq(launchpad.batchLaunchDate(), newDate);
+        launchpad.setYearLaunchDate(2025, newDate);
+        assertEq(launchpad.yearLaunchDate(2025), newDate);
 
         // setPostBatchMinThreshold
         launchpad.setPostBatchMinThreshold(50e6);
@@ -227,38 +263,9 @@ contract LaunchpadEdgeTest is Test {
         // setCommitmentFeeBps too high reverts
         vm.expectRevert(Launchpad.FeeTooHigh.selector);
         launchpad.setCommitmentFeeBps(1001);
-    }
 
-    // ========== 8. ZERO FEE — LAUNCH WITH 0% COMMITMENT FEE ==========
-
-    /// @notice With 0% commitment fee, creationFeePerOutcome = 0 is passed to PM.
-    ///         PM then uses its default marketCreationFee ($5/outcome = $10 total),
-    ///         which is deducted from Launchpad's USDC balance before the trade.
-    ///         This means the net budget for trading is reduced by the PM's default fee.
-    function test_zeroFee_launchStillUsesDefaultPMCreationFee() public {
+        vm.expectRevert(Launchpad.InvalidFee.selector);
         launchpad.setCommitmentFeeBps(0);
-
-        bytes32 proposalId = _proposeAs(alice, "NoFee", 2025, 100e6, 100e6);
-
-        uint256 treasuryBefore = usdc.balanceOf(treasury);
-
-        launchpad.launchMarket(proposalId);
-
-        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
-        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.LAUNCHED));
-
-        // No commitment fees collected, no excess to treasury from commitment fees
-        uint256 treasuryAfter = usdc.balanceOf(treasury);
-        assertEq(treasuryAfter - treasuryBefore, 0, "No commitment fee excess");
-
-        // Market exists — PM charged its default creation fee from Launchpad's balance
-        PredictionMarket.MarketInfo memory mInfo = pm.getMarketInfo(info.marketId);
-        assertEq(mInfo.outcomeTokens.length, 2);
-
-        // PM default fee: 5e6 * 2 = 10e6 total
-        // s = totalFee * ONE / targetVig = 10e6 * 1e6 / 70000
-        uint256 expectedS = (uint256(10e6) * 1e6) / 70000;
-        assertEq(mInfo.initialSharesPerOutcome, expectedS);
     }
 
     // ========== 9. DUST ACCOUNTING ==========
@@ -269,8 +276,7 @@ contract LaunchpadEdgeTest is Test {
         _commitAs(charlie, proposalId, 0, 11e6);
 
         // Total YES = 20e6, NO = 11e6, total = 31e6
-        // Wait for timeout
-        vm.warp(block.timestamp + 24 hours);
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -307,7 +313,7 @@ contract LaunchpadEdgeTest is Test {
         // 19:1 ratio
         bytes32 proposalId = _proposeAs(alice, "Skewed", 2025, 19e6, 1e6);
 
-        // net = 20 * 0.95 = 19, >= 10 threshold
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         vm.prank(alice);
@@ -333,7 +339,7 @@ contract LaunchpadEdgeTest is Test {
         bytes32 proposalId = _proposeAs(alice, "BigBet", 2025, 500e6, 0);
         _commitAs(bob, proposalId, 0, 1e6);
 
-        // Total = 501e6, net = 501 * 0.95 = 475.95
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         vm.prank(alice);
@@ -377,6 +383,7 @@ contract LaunchpadEdgeTest is Test {
         assertTrue(p2 != p3, "p2 != p3");
         assertTrue(p1 != p3, "p1 != p3");
 
+        _warpToLaunch(p1);
         launchpad.launchMarket(p1);
         launchpad.launchMarket(p2);
         launchpad.launchMarket(p3);
@@ -393,6 +400,74 @@ contract LaunchpadEdgeTest is Test {
         assertTrue(info2.marketId != info3.marketId, "market2 != market3");
     }
 
+    function test_launchUsesProposalLocalBudget_notPooledBalance() public {
+        bytes32 largeProposal = _proposeAs(alice, "Anchor", 2025, 100e6, 100e6);
+        bytes32 tinyProposal = _proposeAs(bob, "TinyBudget", 2025, 1e6, 0);
+
+        // The large proposal remains open, so its funds are still sitting in Launchpad.
+        Launchpad.ProposalInfo memory largeInfoBefore = launchpad.getProposal(largeProposal);
+        assertEq(largeInfoBefore.totalCommitted, 200e6);
+
+        _warpToLaunch(tinyProposal);
+        launchpad.launchMarket(tinyProposal);
+
+        Launchpad.ProposalInfo memory tinyInfo = launchpad.getProposal(tinyProposal);
+
+        // Tiny proposal gross = 1e6, fee = 50_000, net trading budget = 950_000.
+        assertEq(tinyInfo.tradingBudget, 950_000, "must use only tiny proposal net commitment");
+        assertLe(tinyInfo.actualCost, tinyInfo.tradingBudget, "trade cannot spend more than local budget");
+
+        // Launching the tiny proposal must not consume the large proposal's escrow.
+        assertGe(usdc.balanceOf(address(launchpad)), 200e6, "other proposal funds must remain reserved");
+    }
+
+    function test_yearLaunchDateUpdate_affectsExistingCommitStageMarkets() public {
+        uint256 firstLaunchDate = block.timestamp + 7 days;
+        uint256 secondLaunchDate = block.timestamp + 14 days;
+        launchpad.setYearLaunchDate(2025, firstLaunchDate);
+
+        bytes32 p1 = _proposeAs(alice, "AlphaDate", 2025, 5e6, 5e6);
+        bytes32 p2 = _proposeAs(bob, "BravoDate", 2025, 5e6, 5e6);
+
+        assertEq(launchpad.getProposal(p1).launchTs, firstLaunchDate);
+        assertEq(launchpad.getProposal(p2).launchTs, firstLaunchDate);
+
+        launchpad.setYearLaunchDate(2025, secondLaunchDate);
+
+        assertEq(launchpad.getProposal(p1).launchTs, secondLaunchDate);
+        assertEq(launchpad.getProposal(p2).launchTs, secondLaunchDate);
+    }
+
+    function test_manySmallCommitters_cannotDosLaunch() public {
+        bytes32 proposalId = _proposeAs(alice, "SpamResistant", 2025, 1e6, 0);
+
+        uint256 numAdditionalCommitters = 200;
+        for (uint256 i = 0; i < numAdditionalCommitters; i++) {
+            address user = address(uint160(0x1000 + i));
+            usdc.mint(user, 1e6);
+            vm.prank(user);
+            usdc.approve(address(launchpad), type(uint256).max);
+
+            uint256[] memory amounts = new uint256[](2);
+            amounts[0] = i % 2 == 0 ? 1e6 : 0;
+            amounts[1] = i % 2 == 0 ? 0 : 1e6;
+
+            vm.prank(user);
+            launchpad.commit(proposalId, amounts);
+        }
+
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.LAUNCHED));
+        assertEq(info.committers.length, numAdditionalCommitters + 1, "all committers recorded");
+
+        vm.prank(alice);
+        launchpad.claimShares(proposalId);
+        assertTrue(launchpad.hasClaimed(proposalId, alice));
+    }
+
     // ========== 13. REFUND ACCOUNTING ==========
 
     function test_refundAccounting_sumsCorrectly() public {
@@ -402,7 +477,7 @@ contract LaunchpadEdgeTest is Test {
 
         // Total = 30e6 gross
         // net = 30 * 0.95 = 28.5
-        vm.warp(block.timestamp + 24 hours);
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         vm.prank(alice);
@@ -431,12 +506,12 @@ contract LaunchpadEdgeTest is Test {
         assertLe(totalRefunds, 30e6, "Refunds exceed total committed");
     }
 
-    // ========== 14. COMMIT AFTER DEADLINE REVERTS ==========
+    // ========== 14. COMMIT AFTER LAUNCH TIME REVERTS ==========
 
-    function test_commitAfterDeadline_reverts() public {
+    function test_commitAfterLaunchTime_reverts() public {
         bytes32 proposalId = _proposeAs(alice, "Tardy", 2025, 5e6, 5e6);
 
-        vm.warp(block.timestamp + 7 days + 1);
+        _warpToLaunch(proposalId);
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 5e6;
@@ -447,18 +522,13 @@ contract LaunchpadEdgeTest is Test {
         launchpad.commit(proposalId, amounts);
     }
 
-    // ========== 15. DOUBLE WITHDRAW REVERTS ==========
+    // ========== 15. WITHDRAW ALWAYS REVERTS ==========
 
-    function test_doubleWithdraw_secondReverts() public {
+    function test_withdrawAlwaysReverts() public {
         bytes32 proposalId = _proposeAs(alice, "DoubleW", 2025, 10e6, 10e6);
 
-        vm.warp(block.timestamp + 7 days + 1);
-
         vm.prank(alice);
-        launchpad.withdrawCommitment(proposalId);
-
-        vm.prank(alice);
-        vm.expectRevert(Launchpad.NothingToWithdraw.selector);
+        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 
@@ -466,6 +536,7 @@ contract LaunchpadEdgeTest is Test {
 
     function test_proposeAfterLaunch_sameNameBlocked() public {
         bytes32 proposalId1 = _proposeAs(alice, "Olivia", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId1);
         launchpad.launchMarket(proposalId1);
 
         uint256[] memory amounts = new uint256[](2);
@@ -475,6 +546,6 @@ contract LaunchpadEdgeTest is Test {
 
         vm.prank(bob);
         vm.expectRevert(Launchpad.DuplicateMarketKey.selector);
-        launchpad.propose("Olivia", 2025, proof, amounts);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, proof, amounts);
     }
 }

@@ -165,7 +165,7 @@ contract PredictionMarket is OwnableRoles {
     error UsdcTransferFailed();
 
     constructor() {
-        _initializeOwner(tx.origin);
+        _initializeOwner(msg.sender);
     }
 
     function initialize(address _usdc) external onlyOwner {

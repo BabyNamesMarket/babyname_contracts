@@ -2,24 +2,24 @@
 
 ## Phase 1: Proposal
 
-Anyone can propose a market for a name in the Merkle tree. The proposer must commit capital simultaneously.
+Anyone can propose a market for a valid `(name, gender, year, region)` tuple. The proposer commits capital in the same transaction.
 
 ```solidity
-// Propose "olivia" for 2025 national ranking, commit $20 to YES
-launchpad.propose("olivia", 2025, merkleProof, [20e6, 0]);
+// Propose "olivia" for 2025 girls national ranking, commit $20 to YES
+launchpad.propose("olivia", 2025, Launchpad.Gender.GIRL, merkleProof, [20e6, 0]);
 ```
 
 Requirements:
-- Name must be valid (Merkle proof or manually approved)
+- Name must be valid for that gender (Merkle proof or manually approved)
 - Year must be open (`yearOpen[2025] == true`)
 - Region must be valid (empty string for national, or a US state abbreviation like "CA")
-- No active proposal for the same `(name, year, region)` combination
+- No active proposal for the same `(name, gender, year, region)` combination
 - At least one non-zero commitment amount
 
 The 5% commitment fee is separated immediately:
 - $20 gross → $1 fee + $19 net
 - Net amounts are tracked per-outcome for share distribution
-- Gross amounts are tracked for full refund on expiry
+- Gross totals are tracked for proposal budgeting
 
 ## Phase 2: Commitment
 
@@ -34,29 +34,27 @@ Users can commit multiple times. Amounts accumulate. Each commitment has its 5% 
 
 ## Phase 3: Launch
 
-Anyone can trigger the launch once the proposal is eligible:
+Anyone can trigger the launch once `block.timestamp >= launchTs`:
 
 ```solidity
 launchpad.launchMarket(proposalId);
 ```
 
-### Launch Eligibility
+### How `launchTs` Is Determined
 
-**Pre-batch proposals** (created before `batchLaunchDate`):
-- Can only launch on or after the batch date
-- All pre-season proposals launch together
+- If `yearLaunchDate[year]` is in the future when the proposal is created, the proposal is tied to that shared year launch date.
+- Otherwise the proposal gets an individual launch time of `createdAt + postBatchTimeout` (default 24 hours).
+- Updating `yearLaunchDate(year, newDate)` changes the effective launch time for commit-stage proposals that are still tied to the shared year schedule.
 
-**Post-batch proposals** (created after `batchLaunchDate`, or if disabled):
-- Launch when net commitment >= `postBatchMinThreshold` ($10), OR
-- Launch when `block.timestamp >= createdAt + postBatchTimeout` (24 hours)
-- Whichever comes first
+Commitments are accepted only before `launchTs`. There is no withdrawal or cancellation path.
 
 ### What Happens at Launch
 
-1. **Fee split**: `min(totalFeesCollected, $10)` funds phantom shares, excess goes to the protocol
+1. **Fee split**: `min(totalFeesCollected, maxCreationFee)` funds symmetric phantom shares, excess goes to the protocol
 2. **Market creation**: PredictionMarket deploys OutcomeToken clones, sets up LMSR state
-3. **Binary search**: Finds maximum affordable aggregate trade within the net commitment budget
-4. **Aggregate trade**: Buys shares proportional to commitment ratios at the initial 50/50 price (fee-exempt via `tradeRaw`)
+3. **Proposal-local budgeting**: the Launchpad derives this proposal’s `tradingBudget` from its own committed funds only
+4. **Binary search**: Finds the maximum affordable aggregate trade within that proposal-local budget
+5. **Aggregate trade**: Buys shares proportional to commitment ratios at the initial 50/50 price (fee-exempt via `tradeRaw`)
 5. **Store results**: Share totals and cost recorded for lazy distribution
 
 The launch transaction is O(1) in committer count — no loop over users.
@@ -134,14 +132,7 @@ predictionMarket.redeem(yesTokenAddress, amount);
 
 If YES won 100%: each YES token redeems for $1.00, each NO token for $0.00.
 
-## Expiry / Cancellation
+## Proposal Notes
 
-If a proposal never launches:
-
-```solidity
-// After deadline passes, or admin cancels:
-launchpad.withdrawCommitment(proposalId);
-// Returns full GROSS amount (including the 5% fee portion)
-```
-
-Users get 100% back — no fee is charged for markets that never launched.
+- `withdrawCommitment(proposalId)` and `cancelProposal(proposalId)` are legacy selectors and now always revert with `CommitmentsFinal()`.
+- Namespaces are gender-specific throughout the proposal flow and Merkle validation.

@@ -45,6 +45,7 @@ await usdc.write.approve([launchpadAddress, amount]);
 const proposalId = await launchpad.write.propose([
   "olivia",           // name
   2025,               // year (uint16)
+  1,                  // gender (0 = BOY, 1 = GIRL)
   [],                 // merkle proof (empty if no whitelist)
   [5000000n, 0n],     // amounts: [$5 YES, $0 NO]
 ]);
@@ -127,7 +128,9 @@ if (info.resolved) {
 
 ```typescript
 const proposal = await launchpad.read.getProposal([proposalId]);
-// proposal.state: 0=OPEN, 1=LAUNCHED, 2=EXPIRED, 3=CANCELLED
+// proposal.state: 0=OPEN, 1=LAUNCHED
+// proposal.gender: 0=BOY, 1=GIRL
+// proposal.launchTs: no more commits after this time
 // proposal.totalCommitted: gross USDC committed
 // proposal.totalFeesCollected: fees separated from commitments
 // proposal.totalPerOutcome: net USDC per outcome
@@ -143,10 +146,28 @@ There's no `proposalCount()`. Enumerate via event logs:
 const events = await publicClient.getLogs({
   address: launchpadAddress,
   event: parseAbiItem(
-    'event ProposalCreated(bytes32 indexed proposalId, bytes32 indexed questionId, string name, uint16 year, string region, address proposer, uint256 deadline)'
+    'event ProposalCreated(bytes32 indexed proposalId, bytes32 indexed questionId, string name, uint8 gender, uint16 year, string region, address proposer, uint256 launchTs)'
   ),
   fromBlock: deploymentBlock,
 });
+```
+
+### Name and Market Keys
+
+```typescript
+const marketKey = await launchpad.read.getMarketKey([
+  "olivia",
+  1,        // GIRL
+  2025,
+  "",
+]);
+
+const proposalId = await launchpad.read.getProposalByMarketKey([
+  "olivia",
+  1,        // GIRL
+  2025,
+  "",
+]);
 ```
 
 ### Market Prices

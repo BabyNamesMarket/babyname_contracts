@@ -8,6 +8,7 @@ solc_version = "0.8.28"
 via_ir = true
 
 fs_permissions = [
+  { access = "read", path = "data/" },
   { access = "read-write", path = "deployments/" },
   { access = "read-write", path = "previews/" }
 ]

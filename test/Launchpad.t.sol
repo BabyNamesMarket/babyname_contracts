@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {stdJson} from "forge-std/StdJson.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {Launchpad} from "../src/Launchpad.sol";
@@ -15,6 +16,8 @@ contract TestUSDC is ERC20 {
 }
 
 contract LaunchpadTest is Test {
+    using stdJson for string;
+
     TestUSDC usdc;
     PredictionMarket pm;
     Launchpad launchpad;
@@ -66,7 +69,7 @@ contract LaunchpadTest is Test {
         amounts[1] = noAmt;
         bytes32[] memory proof = new bytes32[](0);
         vm.prank(alice);
-        proposalId = launchpad.propose(_name, year, proof, amounts);
+        proposalId = launchpad.propose(_name, year, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     function _commitAsBob(bytes32 proposalId, uint256 yesAmt, uint256 noAmt) internal {
@@ -75,6 +78,11 @@ contract LaunchpadTest is Test {
         amounts[1] = noAmt;
         vm.prank(bob);
         launchpad.commit(proposalId, amounts);
+    }
+
+    function _warpToLaunch(bytes32 proposalId) internal {
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        vm.warp(info.launchTs);
     }
 
     // ========== 1. PROPOSE ==========
@@ -155,7 +163,7 @@ contract LaunchpadTest is Test {
 
         uint256 treasuryBefore = usdc.balanceOf(treasury);
 
-        // Wait for post-batch timeout (24h) since net = $190 >= $10 threshold
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -177,13 +185,13 @@ contract LaunchpadTest is Test {
 
     // ========== 4. LAUNCH — POST-BATCH THRESHOLD TRIGGER ==========
 
-    function test_launchMarket_postBatchThresholdTrigger() public {
-        // Default postBatchMinThreshold = $10
-        // Need net >= $10. With 5% fee: gross >= $10 / 0.95 = $10.53
-        // Use $11 to be safe
+    function test_launchMarket_postBatchUsesScheduledLaunchTime() public {
         bytes32 proposalId = _proposeAsAlice("Noah", 2025, 6e6, 5e6);
 
-        // net = $11 * 0.95 = $10.45 >= $10 threshold
+        vm.expectRevert(Launchpad.NotEligibleForLaunch.selector);
+        launchpad.launchMarket(proposalId);
+
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -193,17 +201,12 @@ contract LaunchpadTest is Test {
     // ========== 5. LAUNCH — POST-BATCH TIMEOUT TRIGGER ==========
 
     function test_launchMarket_postBatchTimeoutTrigger() public {
-        // $1 committed — net = $0.95 < $10 threshold
         bytes32 proposalId = _proposeAsAlice("Ava", 2025, 1e6, 0);
 
-        // Should fail before timeout
         vm.expectRevert(Launchpad.NotEligibleForLaunch.selector);
         launchpad.launchMarket(proposalId);
 
-        // Warp 24h
-        vm.warp(block.timestamp + 24 hours);
-
-        // Now should succeed via timeout
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -215,10 +218,8 @@ contract LaunchpadTest is Test {
     function test_launchMarket_preBatchDate() public {
         // Set batch launch date to 10 days from now
         uint256 batchDate = block.timestamp + 10 days;
-        launchpad.setBatchLaunchDate(batchDate);
+        launchpad.setYearLaunchDate(2025, batchDate);
 
-        // Proposal created now, deadline = now + 7 days.
-        // Since deadline (7 days) <= batchLaunchDate (10 days), this is a pre-batch proposal.
         bytes32 proposalId = _proposeAsAlice("Mia", 2025, 100e6, 100e6);
 
         // Can't launch before batch date (even though net > threshold)
@@ -244,6 +245,7 @@ contract LaunchpadTest is Test {
 
         // Total: YES=100e6, NO=100e6, gross=200e6
         // net = 200 * 0.95 = 190
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -280,6 +282,7 @@ contract LaunchpadTest is Test {
         uint256 aliceBefore = usdc.balanceOf(alice);
         uint256 bobBefore = usdc.balanceOf(bob);
 
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         vm.prank(alice);
@@ -314,72 +317,21 @@ contract LaunchpadTest is Test {
         launchpad.claimRefund();
     }
 
-    // ========== 9. WITHDRAW COMMITMENT — EXPIRY ==========
+    // ========== 9. COMMITMENTS FINAL ==========
 
-    function test_withdrawCommitment_afterExpiry() public {
+    function test_withdrawCommitment_reverts_commitmentsFinal() public {
         bytes32 proposalId = _proposeAsAlice("Charlotte", 2025, 5e6, 5e6);
 
-        uint256 aliceBefore = usdc.balanceOf(alice);
-
-        // Warp past deadline
-        vm.warp(block.timestamp + 7 days + 1);
-
         vm.prank(alice);
+        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
         launchpad.withdrawCommitment(proposalId);
-
-        // Alice gets FULL GROSS USDC back (including fee portion)
-        assertEq(usdc.balanceOf(alice), aliceBefore + 10e6);
-
-        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
-        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.EXPIRED));
-
-        uint256[] memory committed = launchpad.getCommitted(proposalId, alice);
-        assertEq(committed[0], 0);
-        assertEq(committed[1], 0);
     }
 
-    // ========== 10. WITHDRAW COMMITMENT — CANCEL ==========
+    // ========== 10. CANCEL DISABLED ==========
 
-    function test_withdrawCommitment_afterCancel() public {
+    function test_cancelProposal_reverts_commitmentsFinal() public {
         bytes32 proposalId = _proposeAsAlice("Amelia", 2025, 5e6, 5e6);
-        _commitAsBob(proposalId, 3e6, 2e6);
-
-        uint256 aliceBefore = usdc.balanceOf(alice);
-        uint256 bobBefore = usdc.balanceOf(bob);
-
-        // Owner cancels
-        launchpad.cancelProposal(proposalId);
-
-        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
-        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.CANCELLED));
-
-        // Alice withdraws full GROSS
-        vm.prank(alice);
-        launchpad.withdrawCommitment(proposalId);
-        assertEq(usdc.balanceOf(alice), aliceBefore + 10e6);
-
-        // Bob withdraws full GROSS
-        vm.prank(bob);
-        launchpad.withdrawCommitment(proposalId);
-        assertEq(usdc.balanceOf(bob), bobBefore + 5e6);
-    }
-
-    // ========== 11. CANCEL PROPOSAL ==========
-
-    function test_cancelProposal_ownerCancels() public {
-        bytes32 proposalId = _proposeAsAlice("Luna", 2025, 5e6, 5e6);
-
-        launchpad.cancelProposal(proposalId);
-
-        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
-        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.CANCELLED));
-    }
-
-    function test_cancelProposal_nonOwnerReverts() public {
-        bytes32 proposalId = _proposeAsAlice("Luna", 2025, 5e6, 5e6);
-
-        vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
         launchpad.cancelProposal(proposalId);
     }
 
@@ -391,8 +343,7 @@ contract LaunchpadTest is Test {
         bytes32 proposalId = _proposeAsAlice("Sophia", 2025, 8e6, 2e6);
         _commitAsBob(proposalId, 4e6, 6e6);
 
-        // Total: YES=12e6, NO=8e6, total=20e6 gross
-        // net = 20 * 0.95 = 19
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -429,7 +380,7 @@ contract LaunchpadTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(Launchpad.YearNotOpen.selector);
-        launchpad.propose("Olivia", 2030, proof, amounts);
+        launchpad.propose("Olivia", 2030, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     function test_closeYear_blocksNewProposals() public {
@@ -442,7 +393,7 @@ contract LaunchpadTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(Launchpad.YearNotOpen.selector);
-        launchpad.propose("Olivia", 2025, proof, amounts);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     function test_sameNameDifferentYear_succeeds() public {
@@ -456,7 +407,7 @@ contract LaunchpadTest is Test {
         bytes32[] memory proof = new bytes32[](0);
 
         vm.prank(bob);
-        bytes32 proposalId = launchpad.propose("Olivia", 2026, proof, amounts);
+        bytes32 proposalId = launchpad.propose("Olivia", 2026, Launchpad.Gender.GIRL, proof, amounts);
         assertTrue(proposalId != bytes32(0));
     }
 
@@ -469,7 +420,20 @@ contract LaunchpadTest is Test {
         bytes32[] memory proof = new bytes32[](0);
 
         vm.prank(bob);
-        bytes32 proposalId = launchpad.proposeRegional("Olivia", 2025, "CA", proof, amounts);
+        bytes32 proposalId = launchpad.proposeRegional("Olivia", 2025, Launchpad.Gender.GIRL, "CA", proof, amounts);
+        assertTrue(proposalId != bytes32(0));
+    }
+
+    function test_sameNameDifferentGender_succeeds() public {
+        _proposeAsAlice("Olivia", 2025, 5e6, 5e6);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory proof = new bytes32[](0);
+
+        vm.prank(bob);
+        bytes32 proposalId = launchpad.propose("Olivia", 2025, Launchpad.Gender.BOY, proof, amounts);
         assertTrue(proposalId != bytes32(0));
     }
 
@@ -485,6 +449,7 @@ contract LaunchpadTest is Test {
             outcomeNames,
             oracle,
             abi.encode("Top girl name 2026"),
+            Launchpad.Gender.GIRL,
             2025,
             "",
             block.timestamp + 30 days
@@ -511,13 +476,14 @@ contract LaunchpadTest is Test {
             outcomeNames,
             oracle,
             abi.encode("test"),
+            Launchpad.Gender.GIRL,
             2025,
             "",
             block.timestamp + 7 days
         );
     }
 
-    function test_adminPropose_usesDefaultDeadlineWhenZero() public {
+    function test_adminPropose_usesDefaultLaunchTimeWhenZero() public {
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
@@ -526,13 +492,14 @@ contract LaunchpadTest is Test {
             outcomeNames,
             oracle,
             abi.encode("test"),
+            Launchpad.Gender.GIRL,
             2025,
             "",
-            0 // use default deadline
+            0 // use default launch time
         );
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
-        assertEq(info.deadline, block.timestamp + 7 days);
+        assertEq(info.launchTs, block.timestamp + 24 hours);
     }
 
     // ========== 15. COMMITMENT FEE MATH ==========
@@ -545,7 +512,7 @@ contract LaunchpadTest is Test {
         uint256 treasuryBefore = usdc.balanceOf(treasury);
 
         // Wait for timeout so we can launch with < threshold net
-        vm.warp(block.timestamp + 24 hours);
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -580,7 +547,7 @@ contract LaunchpadTest is Test {
 
         vm.prank(bob);
         vm.expectRevert(Launchpad.DuplicateMarketKey.selector);
-        launchpad.propose("Olivia", 2025, proof, amounts);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     function test_duplicateMarketKey_caseInsensitive() public {
@@ -593,16 +560,13 @@ contract LaunchpadTest is Test {
 
         vm.prank(bob);
         vm.expectRevert(Launchpad.DuplicateMarketKey.selector);
-        launchpad.propose("olivia", 2025, proof, amounts);
+        launchpad.propose("olivia", 2025, Launchpad.Gender.GIRL, proof, amounts);
     }
 
-    function test_duplicateMarketKey_allowedAfterExpiry() public {
+    function test_duplicateMarketKey_stillBlockedAfterLaunchTimeIfNotLaunched() public {
         bytes32 firstProposalId = _proposeAsAlice("Olivia", 2025, 5e6, 5e6);
 
-        vm.warp(block.timestamp + 7 days + 1);
-
-        vm.prank(alice);
-        launchpad.withdrawCommitment(firstProposalId);
+        _warpToLaunch(firstProposalId);
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 5e6;
@@ -610,12 +574,13 @@ contract LaunchpadTest is Test {
         bytes32[] memory proof = new bytes32[](0);
 
         vm.prank(bob);
-        bytes32 proposalId = launchpad.propose("Olivia", 2025, proof, amounts);
-        assertTrue(proposalId != bytes32(0));
+        vm.expectRevert(Launchpad.DuplicateMarketKey.selector);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     function test_duplicateMarketKey_revertsWhileLaunched() public {
         bytes32 proposalId = _proposeAsAlice("Olivia", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         uint256[] memory amounts = new uint256[](2);
@@ -625,21 +590,24 @@ contract LaunchpadTest is Test {
 
         vm.prank(bob);
         vm.expectRevert(Launchpad.DuplicateMarketKey.selector);
-        launchpad.propose("Olivia", 2025, proof, amounts);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, proof, amounts);
     }
 
     // ========== 17. GET MARKET KEY ==========
 
     function test_getMarketKey() public view {
-        bytes32 key1 = launchpad.getMarketKey("Olivia", 2025, "");
-        bytes32 key2 = launchpad.getMarketKey("olivia", 2025, "");
+        bytes32 key1 = launchpad.getMarketKey("Olivia", Launchpad.Gender.GIRL, 2025, "");
+        bytes32 key2 = launchpad.getMarketKey("olivia", Launchpad.Gender.GIRL, 2025, "");
         assertEq(key1, key2, "case insensitive market key");
 
-        bytes32 key3 = launchpad.getMarketKey("Olivia", 2026, "");
+        bytes32 key3 = launchpad.getMarketKey("Olivia", Launchpad.Gender.GIRL, 2026, "");
         assertTrue(key1 != key3, "different year = different key");
 
-        bytes32 key4 = launchpad.getMarketKey("Olivia", 2025, "CA");
+        bytes32 key4 = launchpad.getMarketKey("Olivia", Launchpad.Gender.GIRL, 2025, "CA");
         assertTrue(key1 != key4, "different region = different key");
+
+        bytes32 key5 = launchpad.getMarketKey("Olivia", Launchpad.Gender.BOY, 2025, "");
+        assertTrue(key1 != key5, "different gender = different key");
     }
 
     // ========== 18. GET PROPOSAL BY MARKET KEY ==========
@@ -647,10 +615,10 @@ contract LaunchpadTest is Test {
     function test_getProposalByMarketKey() public {
         bytes32 proposalId = _proposeAsAlice("Olivia", 2025, 5e6, 5e6);
 
-        bytes32 found = launchpad.getProposalByMarketKey("Olivia", 2025, "");
+        bytes32 found = launchpad.getProposalByMarketKey("Olivia", Launchpad.Gender.GIRL, 2025, "");
         assertEq(found, proposalId);
 
-        bytes32 found2 = launchpad.getProposalByMarketKey("olivia", 2025, "");
+        bytes32 found2 = launchpad.getProposalByMarketKey("olivia", Launchpad.Gender.GIRL, 2025, "");
         assertEq(found2, proposalId);
     }
 
@@ -660,6 +628,7 @@ contract LaunchpadTest is Test {
         bytes32 proposalId = _proposeAsAlice("Evelyn", 2025, 50e6, 50e6);
         _commitAsBob(proposalId, 50e6, 50e6);
 
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
@@ -700,6 +669,7 @@ contract LaunchpadTest is Test {
     function test_claimShares_doubleClaimReverts() public {
         bytes32 proposalId = _proposeAsAlice("Luna", 2025, 100e6, 100e6);
 
+        _warpToLaunch(proposalId);
         launchpad.launchMarket(proposalId);
 
         vm.prank(alice);
@@ -710,13 +680,13 @@ contract LaunchpadTest is Test {
         launchpad.claimShares(proposalId);
     }
 
-    // ========== 20. WITHDRAW BEFORE EXPIRY REVERTS ==========
+    // ========== 20. WITHDRAW DISABLED ==========
 
-    function test_withdrawCommitment_beforeExpiryReverts() public {
+    function test_withdrawCommitment_revertsEvenBeforeLaunchTime() public {
         bytes32 proposalId = _proposeAsAlice("Charlotte", 2025, 5e6, 5e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.NotWithdrawable.selector);
+        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 
@@ -724,7 +694,7 @@ contract LaunchpadTest is Test {
 
     function test_propose_invalidNameReverts() public {
         bytes32 fakeRoot = keccak256("some merkle root");
-        launchpad.setNamesMerkleRoot(fakeRoot);
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 5e6;
@@ -733,6 +703,44 @@ contract LaunchpadTest is Test {
 
         vm.prank(alice);
         vm.expectRevert(Launchpad.InvalidName.selector);
-        launchpad.propose("Olivia", 2025, emptyProof, amounts);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+    }
+
+    function test_approveName_isGenderSpecific() public {
+        bytes32 fakeRoot = keccak256("some merkle root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.BOY, fakeRoot);
+        launchpad.approveName("Olivia", Launchpad.Gender.GIRL);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        assertTrue(proposalId != bytes32(0));
+
+        vm.prank(bob);
+        vm.expectRevert(Launchpad.InvalidName.selector);
+        launchpad.propose("Olivia", 2025, Launchpad.Gender.BOY, emptyProof, amounts);
+    }
+
+    function test_genderSpecificMerkleRoots_acceptValidProofs() public {
+        string memory json = vm.readFile("data/name-merkle-roots.json");
+        bytes32 boysRoot = json.readBytes32(".boys.root");
+        bytes32 girlsRoot = json.readBytes32(".girls.root");
+        string memory boyName = json.readString(".boys.sampleName");
+        string memory girlName = json.readString(".girls.sampleName");
+        bytes32[] memory boyProof = json.readBytes32Array(".boys.sampleProof");
+        bytes32[] memory girlProof = json.readBytes32Array(".girls.sampleProof");
+
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.BOY, boysRoot);
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, girlsRoot);
+
+        assertTrue(launchpad.isValidName(boyName, Launchpad.Gender.BOY, boyProof));
+        assertTrue(launchpad.isValidName(girlName, Launchpad.Gender.GIRL, girlProof));
+        assertFalse(launchpad.isValidName(girlName, Launchpad.Gender.BOY, girlProof));
+        assertFalse(launchpad.isValidName(boyName, Launchpad.Gender.GIRL, boyProof));
     }
 }

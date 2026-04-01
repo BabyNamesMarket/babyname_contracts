@@ -29,12 +29,13 @@
 
 Handles the pre-market commitment phase:
 
-- **Name validation** via Merkle tree of SSA names
-- **Year/region scoping** — each `(name, year, region)` is a unique market
+- **Name validation** via per-gender Merkle roots of SSA names
+- **Gender/year/region scoping** — each `(name, gender, year, region)` is a unique market
 - **Commitment accumulation** — users commit USDC to YES/NO outcomes
 - **5% fee separation** at commit time — fees fund phantom shares at launch
-- **Launch triggers** — batch date for pre-season, threshold/timeout for post-season
+- **Scheduled launch times** — year-wide launch dates or per-proposal fallback times
 - **Lazy share distribution** — `launchMarket()` is O(1), users claim individually
+- **Proposal-local budgeting** — one proposal cannot spend another proposal’s funds
 
 After a market launches, the Launchpad's job is done. Users interact with PredictionMarket directly for trading.
 
@@ -61,11 +62,11 @@ Independent Merkle-based reward system for distributing USDC rewards (promotiona
 
 | Role | Who | Can Do |
 |------|-----|--------|
-| Owner (tx.origin at deploy) | Deployer | Initialize, grant roles |
+| Owner (msg.sender at deploy) | Deployer / deploying contract | Initialize, grant roles |
 | PROTOCOL_MANAGER_ROLE | the protocol multisig | Set fees, vig, max outcomes, bailout |
 | MARKET_CREATOR_ROLE | Launchpad contract | Create markets, fee-exempt trades |
 | Oracle (per-market) | Deployer (testnet) | Resolve markets, pause/unpause |
-| Launchpad Owner | Deployer | Open/close years, set parameters, cancel proposals |
+| Launchpad Owner | Deployer | Open/close years, set launch dates, set roots, approve names, set parameters |
 
 ## USDC Flow
 

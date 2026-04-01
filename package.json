@@ -16,7 +16,8 @@
   "scripts": {
     "build": "forge build",
     "test": "forge test",
-    "export-abi": "make export-abi"
+    "export-abi": "make export-abi",
+    "generate-name-merkle": "node scripts/generate-name-merkle.js"
   },
   "repository": {
     "type": "git",

@@ -25,7 +25,7 @@ contract PredictionMarketFuzzTest is Test {
         usdc = new TestUSDC2();
         pm = new PredictionMarket();
 
-        vm.startPrank(tx.origin);
+        vm.startPrank(address(this));
         pm.initialize(address(usdc));
         pm.grantRoles(address(this), pm.PROTOCOL_MANAGER_ROLE());
         pm.grantRoles(address(this), pm.MARKET_CREATOR_ROLE());

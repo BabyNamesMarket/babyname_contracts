@@ -25,8 +25,7 @@ contract PredictionMarketTest is Test {
         usdc = new TestUSDC();
         pm = new PredictionMarket();
 
-        // Constructor sets owner to tx.origin, so we prank as tx.origin for owner calls
-        vm.startPrank(tx.origin);
+        vm.startPrank(address(this));
         pm.initialize(address(usdc));
         pm.grantRoles(address(this), pm.PROTOCOL_MANAGER_ROLE());
         pm.grantRoles(address(this), pm.MARKET_CREATOR_ROLE());

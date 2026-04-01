@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/Script.sol";
+import "forge-std/StdJson.sol";
 import "../src/PredictionMarket.sol";
 import "../src/Launchpad.sol";
 import "../src/OutcomeToken.sol";
@@ -29,6 +30,8 @@ contract TestUSDC is ERC20 {
 }
 
 contract DeployTestnet is Script {
+    using stdJson for string;
+
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
@@ -80,7 +83,16 @@ contract DeployTestnet is Script {
         // 5. Finalize testnet defaults.
         vault.seedDefaultRegions();
         vault.openYear(2025);
+        vault.setYearLaunchDate(2025, block.timestamp + 7 days);
         console.log("Default regions seeded, year 2025 opened");
+
+        // 6. Set names merkle roots from generated all-time gender-split data
+        string memory rootsJson = vm.readFile("data/name-merkle-roots.json");
+        bytes32 boysRoot = rootsJson.readBytes32(".boys.root");
+        bytes32 girlsRoot = rootsJson.readBytes32(".girls.root");
+        vault.setNamesMerkleRoot(Launchpad.Gender.BOY, boysRoot);
+        vault.setNamesMerkleRoot(Launchpad.Gender.GIRL, girlsRoot);
+        console.log("Names merkle roots set");
 
         // 7. Deploy RewardDistributor
         RewardDistributor rd = new RewardDistributor(collateralToken, deployer);

@@ -31,6 +31,11 @@ import {PredictionMarket} from "./PredictionMarket.sol";
  *         refund including the fee portion.
  */
 contract Launchpad is OwnableRoles {
+    enum Gender {
+        BOY,
+        GIRL
+    }
+
     struct PermitArgs {
         uint256 value;
         uint256 deadline;
@@ -44,16 +49,18 @@ contract Launchpad is OwnableRoles {
 
     // ========== NAME VALIDATION ==========
 
-    /// @notice Merkle root of valid SSA names (0 = no whitelist enforced, all names allowed)
-    bytes32 public namesMerkleRoot;
+    /// @notice Merkle root of valid SSA names by gender (0 = no whitelist enforced for that gender)
+    mapping(uint8 => bytes32) public namesMerkleRoot;
 
-    /// @notice Names manually approved by owner (keccak256(lowercased) => true)
+    /// @notice Names manually approved by owner (keccak256(lowercased, gender) => true)
     mapping(bytes32 => bool) public approvedNames;
+    mapping(bytes32 => bool) public proposedNames;
 
     // ========== YEAR LIFECYCLE ==========
 
     /// @notice Whether a year is open for new proposals. Years are locked by default.
     mapping(uint16 => bool) public yearOpen;
+    mapping(uint16 => uint256) public yearLaunchDate;
 
     // ========== REGION VALIDATION ==========
 
@@ -75,21 +82,16 @@ contract Launchpad is OwnableRoles {
 
     /// @notice Maximum allowed commitment fee (10% = 1000 bps)
     uint256 public constant MAX_COMMITMENT_FEE_BPS = 1000;
+    uint256 public constant MIN_TOTAL_COMMITMENT = 1e6;
 
     /// @notice Maximum total creation fee for phantom shares (in USDC, 6 decimals)
     uint256 public maxCreationFee = 10e6;
 
     // ========== LAUNCH TRIGGERS ==========
 
-    /// @notice Batch launch date. Proposals created before this date launch ON this date.
-    ///         After this date, proposals use threshold + time rules. 0 = disabled.
-    uint256 public batchLaunchDate;
-
-    /// @notice For post-batch proposals: minimum net commitment to trigger immediate launch
-    uint256 public postBatchMinThreshold = 10e6;
-
     /// @notice For post-batch proposals: time after proposal creation when it auto-qualifies for launch
     uint256 public postBatchTimeout = 24 hours;
+    uint256 public postBatchMinThreshold = 10e6;
 
     // ========== PROPOSAL STATE ==========
 
@@ -105,7 +107,8 @@ contract Launchpad is OwnableRoles {
         address oracle;
         bytes metadata;
         string[] outcomeNames;
-        uint256 deadline;
+        Gender gender;
+        uint256 launchTs;
         uint256 createdAt;
         ProposalState state;
         bytes32 marketId;
@@ -126,7 +129,9 @@ contract Launchpad is OwnableRoles {
         address oracle;
         bytes metadata;
         string[] outcomeNames;
-        uint256 deadline;
+        Gender gender;
+        uint256 customLaunchTs;
+        bool useYearLaunchSchedule;
         uint256 createdAt;
         ProposalState state;
         bytes32 marketId;
@@ -147,6 +152,7 @@ contract Launchpad is OwnableRoles {
     }
 
     mapping(bytes32 => ProposalStorage) internal proposals;
+    mapping(bytes32 => bytes32) public questionIdToProposal;
 
     /// @notice Maps market key hash(name, year, region) to proposalId.
     ///         Prevents duplicate proposals for the same (name, year, region) combination.
@@ -160,10 +166,11 @@ contract Launchpad is OwnableRoles {
         bytes32 indexed proposalId,
         bytes32 indexed questionId,
         string name,
+        Gender gender,
         uint16 year,
         string region,
         address proposer,
-        uint256 deadline
+        uint256 launchTs
     );
     event Committed(bytes32 indexed proposalId, address indexed user, uint256[] amounts, uint256 total);
     event CommitmentWithdrawn(bytes32 indexed proposalId, address indexed user, uint256 amount);
@@ -179,8 +186,9 @@ contract Launchpad is OwnableRoles {
     event ProposalCancelled(bytes32 indexed proposalId);
     event RefundClaimed(address indexed user, uint256 amount);
     event SurplusRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
-    event NamesMerkleRootUpdated(bytes32 oldRoot, bytes32 newRoot);
-    event NameApproved(string name);
+    event NamesMerkleRootUpdated(Gender indexed gender, bytes32 oldRoot, bytes32 newRoot);
+    event NameApproved(string name, Gender indexed gender);
+    event NameProposed(string name, Gender indexed gender, address indexed proposer);
     event DefaultOracleUpdated(address indexed oldOracle, address indexed newOracle);
     event DefaultDeadlineDurationUpdated(uint256 oldDuration, uint256 newDuration);
     event DefaultRegionsSeeded();
@@ -190,7 +198,7 @@ contract Launchpad is OwnableRoles {
     event RegionRemoved(string region);
     event CommitmentFeeBpsUpdated(uint256 oldBps, uint256 newBps);
     event MaxCreationFeeUpdated(uint256 oldFee, uint256 newFee);
-    event BatchLaunchDateUpdated(uint256 oldDate, uint256 newDate);
+    event YearLaunchDateUpdated(uint16 indexed year, uint256 oldDate, uint256 newDate);
     event PostBatchMinThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     event PostBatchTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
 
@@ -220,6 +228,10 @@ contract Launchpad is OwnableRoles {
     error DefaultsNotSet();
     error DefaultRegionsAlreadySeeded();
     error FeeTooHigh();
+    error InvalidFee();
+    error CommitmentsFinal();
+    error DuplicateQuestionId();
+    error InvalidGender();
 
     constructor(
         address _predictionMarket,
@@ -338,15 +350,23 @@ contract Launchpad is OwnableRoles {
         return validRegions[keccak256(bytes(_toUpperCase(region)))];
     }
 
-    function setNamesMerkleRoot(bytes32 _root) external onlyOwner {
-        emit NamesMerkleRootUpdated(namesMerkleRoot, _root);
-        namesMerkleRoot = _root;
+    function setNamesMerkleRoot(Gender gender, bytes32 _root) external onlyOwner {
+        uint8 g = uint8(gender);
+        emit NamesMerkleRootUpdated(gender, namesMerkleRoot[g], _root);
+        namesMerkleRoot[g] = _root;
     }
 
-    function approveName(string calldata name) external onlyOwner {
-        bytes32 nameHash = keccak256(bytes(_toLowerCase(name)));
+    function approveName(string calldata name, Gender gender) external onlyOwner {
+        bytes32 nameHash = _nameKey(_toLowerCase(name), gender);
         approvedNames[nameHash] = true;
-        emit NameApproved(name);
+        proposedNames[nameHash] = false;
+        emit NameApproved(name, gender);
+    }
+
+    function proposeName(string calldata name, Gender gender) external {
+        bytes32 nameHash = _nameKey(_toLowerCase(name), gender);
+        proposedNames[nameHash] = true;
+        emit NameProposed(name, gender, msg.sender);
     }
 
     function setSurplusRecipient(address _surplusRecipient) external onlyOwner {
@@ -367,6 +387,7 @@ contract Launchpad is OwnableRoles {
     }
 
     function setCommitmentFeeBps(uint256 _bps) external onlyOwner {
+        if (_bps == 0) revert InvalidFee();
         if (_bps > MAX_COMMITMENT_FEE_BPS) revert FeeTooHigh();
         emit CommitmentFeeBpsUpdated(commitmentFeeBps, _bps);
         commitmentFeeBps = _bps;
@@ -377,9 +398,10 @@ contract Launchpad is OwnableRoles {
         maxCreationFee = _maxFee;
     }
 
-    function setBatchLaunchDate(uint256 _date) external onlyOwner {
-        emit BatchLaunchDateUpdated(batchLaunchDate, _date);
-        batchLaunchDate = _date;
+    function setYearLaunchDate(uint16 year, uint256 _date) external onlyOwner {
+        if (year == 0) revert InvalidYear();
+        emit YearLaunchDateUpdated(year, yearLaunchDate[year], _date);
+        yearLaunchDate[year] = _date;
     }
 
     function setPostBatchMinThreshold(uint256 _threshold) external onlyOwner {
@@ -400,18 +422,32 @@ contract Launchpad is OwnableRoles {
         if (!usdc.transfer(to, amount)) revert TransferFailed();
     }
 
+    function _nameKey(string memory loweredName, Gender gender) internal pure returns (bytes32) {
+        return keccak256(abi.encode(loweredName, gender));
+    }
+
+    function _launchTimestamp(ProposalStorage storage prop) internal view returns (uint256) {
+        if (prop.customLaunchTs != 0) return prop.customLaunchTs;
+        if (prop.useYearLaunchSchedule) {
+            uint256 scheduled = yearLaunchDate[prop.year];
+            if (scheduled != 0) return scheduled;
+        }
+        return prop.createdAt + postBatchTimeout;
+    }
+
     // ========== NAME VALIDATION ==========
 
-    function isValidName(string memory name, bytes32[] calldata proof) public view returns (bool) {
-        if (namesMerkleRoot == bytes32(0)) return true;
+    function isValidName(string memory name, Gender gender, bytes32[] calldata proof) public view returns (bool) {
+        bytes32 root = namesMerkleRoot[uint8(gender)];
+        if (root == bytes32(0)) return true;
 
         string memory lowered = _toLowerCase(name);
-        bytes32 nameHash = keccak256(bytes(lowered));
+        bytes32 nameHash = _nameKey(lowered, gender);
 
         if (approvedNames[nameHash]) return true;
 
-        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(lowered))));
-        return MerkleProofLib.verify(proof, namesMerkleRoot, leaf);
+        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(lowered, gender))));
+        return MerkleProofLib.verify(proof, root, leaf);
     }
 
     // ========== PROPOSALS ==========
@@ -424,16 +460,23 @@ contract Launchpad is OwnableRoles {
      * @param proof Merkle proof that the name is in the valid names tree
      * @param amounts Commitment amounts per outcome [YES, NO]
      */
-    function propose(string calldata name, uint16 year, bytes32[] calldata proof, uint256[] calldata amounts)
+    function propose(
+        string calldata name,
+        uint16 year,
+        Gender gender,
+        bytes32[] calldata proof,
+        uint256[] calldata amounts
+    )
         external
         returns (bytes32)
     {
-        return _propose(name, year, "", proof, amounts);
+        return _propose(name, year, gender, "", proof, amounts);
     }
 
     function proposeWithPermit(
         string calldata name,
         uint16 year,
+        Gender gender,
         bytes32[] calldata proof,
         uint256[] calldata amounts,
         PermitArgs calldata permitData
@@ -447,7 +490,7 @@ contract Launchpad is OwnableRoles {
             permitData.r,
             permitData.s
         );
-        return _propose(name, year, "", proof, amounts);
+        return _propose(name, year, gender, "", proof, amounts);
     }
 
     /**
@@ -457,32 +500,32 @@ contract Launchpad is OwnableRoles {
     function proposeRegional(
         string calldata name,
         uint16 year,
+        Gender gender,
         string calldata region,
         bytes32[] calldata proof,
         uint256[] calldata amounts
     ) external returns (bytes32) {
-        return _propose(name, year, region, proof, amounts);
+        return _propose(name, year, gender, region, proof, amounts);
     }
 
     function _propose(
         string calldata name,
         uint16 year,
+        Gender gender,
         string memory region,
         bytes32[] calldata proof,
         uint256[] calldata amounts
     ) internal returns (bytes32) {
-        if (!isValidName(name, proof)) revert InvalidName();
+        if (!isValidName(name, gender, proof)) revert InvalidName();
         if (!yearOpen[year]) revert YearNotOpen();
         if (!isValidRegion(region)) revert InvalidRegion();
         if (defaultOracle == address(0)) revert DefaultsNotSet();
-        if (defaultDeadlineDuration == 0) revert DefaultsNotSet();
-
         string memory lowered = _toLowerCase(name);
         // Store region as uppercase abbreviation (or "" for national)
         string memory upperRegion = bytes(region).length > 0 ? _toUpperCase(region) : region;
 
-        // Unique key per (name, year, region)
-        bytes32 marketKey = keccak256(abi.encode(lowered, year, upperRegion));
+        // Unique key per (name, gender, year, region)
+        bytes32 marketKey = keccak256(abi.encode(lowered, gender, year, upperRegion));
 
         // Prevent duplicate active proposals for the same (name, year, region)
         if (marketKeyToProposal[marketKey] != bytes32(0)) {
@@ -495,27 +538,31 @@ contract Launchpad is OwnableRoles {
             }
         }
 
-        // questionId: launchpad address (20 bytes) + hash(name, year, region) truncated (12 bytes)
+        // questionId: launchpad address (20 bytes) + hash(name, gender, year, region) truncated (12 bytes)
         bytes32 questionId = bytes32(
             (uint256(uint160(address(this))) << 96) | uint256(uint96(bytes12(marketKey)))
         );
+        if (questionIdToProposal[questionId] != bytes32(0)) revert DuplicateQuestionId();
 
         bytes32 proposalId =
             keccak256(abi.encodePacked(address(this), block.chainid, questionId, block.timestamp));
-        if (proposals[proposalId].deadline != 0) revert ProposalExists();
+        if (proposals[proposalId].createdAt != 0) revert ProposalExists();
 
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
 
-        uint256 deadline = block.timestamp + defaultDeadlineDuration;
+        uint256 launchTs = yearLaunchDate[year] > block.timestamp
+            ? yearLaunchDate[year]
+            : block.timestamp + postBatchTimeout;
 
         ProposalStorage storage prop = proposals[proposalId];
         prop.questionId = questionId;
         prop.oracle = defaultOracle;
-        prop.metadata = abi.encode(lowered, year, upperRegion);
+        prop.metadata = abi.encode(lowered, gender, year, upperRegion);
         prop.outcomeNames = outcomeNames;
-        prop.deadline = deadline;
+        prop.gender = gender;
+        prop.useYearLaunchSchedule = yearLaunchDate[year] > block.timestamp;
         prop.createdAt = block.timestamp;
         prop.state = ProposalState.OPEN;
         prop.totalPerOutcome = new uint256[](2);
@@ -524,9 +571,10 @@ contract Launchpad is OwnableRoles {
         prop.region = upperRegion;
 
         marketKeyToProposal[marketKey] = proposalId;
+        questionIdToProposal[questionId] = proposalId;
 
         emit ProposalCreated(
-            proposalId, questionId, lowered, year, upperRegion, msg.sender, deadline
+            proposalId, questionId, lowered, gender, year, upperRegion, msg.sender, launchTs
         );
 
         if (amounts.length != 2) revert InvalidAmounts();
@@ -544,39 +592,49 @@ contract Launchpad is OwnableRoles {
         string[] calldata outcomeNames,
         address oracle,
         bytes calldata metadata,
+        Gender gender,
         uint16 year,
         string calldata region,
-        uint256 deadline
+        uint256 launchTs
     ) external onlyOwner returns (bytes32) {
         if (outcomeNames.length < 2) revert InvalidOutcomes();
         if (oracle == address(0)) revert InvalidOracle();
         if (year == 0) revert InvalidYear();
+        if (uint8(gender) > uint8(Gender.GIRL)) revert InvalidGender();
 
-        uint256 _deadline = deadline > 0 ? deadline : block.timestamp + defaultDeadlineDuration;
-        if (_deadline <= block.timestamp) revert InvalidDeadline();
+        uint256 _launchTs = launchTs > 0
+            ? launchTs
+            : (yearLaunchDate[year] > block.timestamp)
+                ? yearLaunchDate[year]
+                : block.timestamp + postBatchTimeout;
+        if (_launchTs <= block.timestamp) revert InvalidDeadline();
 
-        bytes32 metaHash = keccak256(abi.encode(metadata, year, region));
+        bytes32 metaHash = keccak256(abi.encode(metadata, gender, year, region));
         bytes32 questionId = bytes32(
             (uint256(uint160(address(this))) << 96) | uint256(uint96(bytes12(metaHash)))
         );
+        if (questionIdToProposal[questionId] != bytes32(0)) revert DuplicateQuestionId();
 
         bytes32 proposalId =
             keccak256(abi.encodePacked(address(this), block.chainid, questionId, block.timestamp));
-        if (proposals[proposalId].deadline != 0) revert ProposalExists();
+        if (proposals[proposalId].createdAt != 0) revert ProposalExists();
 
         ProposalStorage storage prop = proposals[proposalId];
         prop.questionId = questionId;
         prop.oracle = oracle;
         prop.metadata = metadata;
         prop.outcomeNames = outcomeNames;
-        prop.deadline = _deadline;
+        prop.gender = gender;
+        prop.customLaunchTs = launchTs;
+        prop.useYearLaunchSchedule = launchTs == 0 && yearLaunchDate[year] > block.timestamp;
         prop.createdAt = block.timestamp;
         prop.state = ProposalState.OPEN;
         prop.totalPerOutcome = new uint256[](outcomeNames.length);
         prop.year = year;
         prop.region = bytes(region).length > 0 ? _toUpperCase(region) : region;
+        questionIdToProposal[questionId] = proposalId;
 
-        emit ProposalCreated(proposalId, questionId, "", year, prop.region, msg.sender, _deadline);
+        emit ProposalCreated(proposalId, questionId, "", gender, year, prop.region, msg.sender, _launchTs);
 
         return proposalId;
     }
@@ -586,7 +644,7 @@ contract Launchpad is OwnableRoles {
     function commit(bytes32 proposalId, uint256[] calldata amounts) external {
         ProposalStorage storage prop = proposals[proposalId];
         if (prop.state != ProposalState.OPEN) revert NotOpen();
-        if (block.timestamp >= prop.deadline) revert DeadlinePassed();
+        if (block.timestamp >= _launchTimestamp(prop)) revert DeadlinePassed();
         if (amounts.length != prop.outcomeNames.length) revert InvalidAmounts();
 
         _commit(proposalId, amounts);
@@ -606,7 +664,7 @@ contract Launchpad is OwnableRoles {
         );
         ProposalStorage storage prop = proposals[proposalId];
         if (prop.state != ProposalState.OPEN) revert NotOpen();
-        if (block.timestamp >= prop.deadline) revert DeadlinePassed();
+        if (block.timestamp >= _launchTimestamp(prop)) revert DeadlinePassed();
         if (amounts.length != prop.outcomeNames.length) revert InvalidAmounts();
 
         _commit(proposalId, amounts);
@@ -664,23 +722,10 @@ contract Launchpad is OwnableRoles {
         ProposalStorage storage prop = proposals[proposalId];
         if (prop.state != ProposalState.OPEN) revert NotOpen();
 
-        // Check launch eligibility
-        {
-            bool eligible;
-            uint256 netCommitted = prop.totalCommitted - prop.totalFeesCollected;
-            if (batchLaunchDate > 0 && prop.createdAt < batchLaunchDate) {
-                // Pre-batch proposal: can only launch on or after batch date
-                eligible = block.timestamp >= batchLaunchDate;
-            } else {
-                // Post-batch proposal (or batch disabled): threshold OR timeout
-                eligible = netCommitted >= postBatchMinThreshold
-                    || block.timestamp >= prop.createdAt + postBatchTimeout;
-            }
-            if (!eligible) revert NotEligibleForLaunch();
-        }
+        if (block.timestamp < _launchTimestamp(prop)) revert NotEligibleForLaunch();
 
-        // Must have at least SOME commitment
-        if (prop.totalCommitted == 0) revert BelowThreshold();
+        // Proposal must have at least $1 gross committed.
+        if (prop.totalCommitted < MIN_TOTAL_COMMITMENT) revert BelowThreshold();
 
         prop.state = ProposalState.LAUNCHED;
 
@@ -717,16 +762,23 @@ contract Launchpad is OwnableRoles {
             outcomeNames: outcomeNames
         });
 
+        uint256 balanceBeforeCreate = usdc.balanceOf(address(this));
         bytes32 marketId = predictionMarket.createMarket(params);
+        uint256 balanceAfterCreate = usdc.balanceOf(address(this));
         prop.marketId = marketId;
 
-        // 2. Binary search for aggregate trade
-        //    Use actual available USDC as budget (accounts for PM creation fee spent in createMarket)
+        // 2. Binary search for aggregate trade using only this proposal's remaining budget.
+        //    This is the proposal's gross commitment minus fees already sent to treasury
+        //    and minus the actual market-creation charge paid to PredictionMarket.
+        //    Never use the Launchpad's pooled USDC balance here, or one proposal can
+        //    spend funds that belong to another proposal or already-assigned refunds.
         PredictionMarket.MarketInfo memory info = predictionMarket.getMarketInfo(marketId);
-        uint256 tradingBudget = usdc.balanceOf(address(this));
+        uint256 creationCostCharged = balanceBeforeCreate - balanceAfterCreate;
+        uint256 tradingBudget = prop.totalCommitted - excessFees - creationCostCharged;
         int256[] memory deltaShares = _computeAggregateShares(info, prop.totalPerOutcome, tradingBudget);
 
         // 3. Execute aggregate trade
+        uint256 balBeforeTrade = usdc.balanceOf(address(this));
         {
             bool hasNonZero;
             for (uint256 i; i < n; i++) {
@@ -751,13 +803,11 @@ contract Launchpad is OwnableRoles {
         }
 
         // 4. Store results for lazy claimShares()
-        //    tradingBudget = USDC available after createMarket (for binary search + trade)
-        //    actualCost = USDC spent on the trade (= tradingBudget - remaining balance)
+        //    tradingBudget = this proposal's net committed USDC
+        //    actualCost = USDC spent on this proposal's aggregate trade
         prop.tradingBudget = tradingBudget;
-        {
-            uint256 balNow = usdc.balanceOf(address(this));
-            prop.actualCost = tradingBudget > balNow ? tradingBudget - balNow : 0;
-        }
+        uint256 balAfterTrade = usdc.balanceOf(address(this));
+        prop.actualCost = balBeforeTrade > balAfterTrade ? balBeforeTrade - balAfterTrade : 0;
         prop.totalSharesPerOutcome = new uint256[](n);
         for (uint256 i; i < n; i++) {
             if (deltaShares[i] > 0) {
@@ -865,42 +915,14 @@ contract Launchpad is OwnableRoles {
 
     // ========== WITHDRAWALS ==========
 
-    /**
-     * @notice Withdraw committed funds when proposal is expired or cancelled.
-     *         Returns the GROSS amount (including the fee portion) since the market never launched.
-     */
     function withdrawCommitment(bytes32 proposalId) external {
-        ProposalStorage storage prop = proposals[proposalId];
-        if (
-            prop.state != ProposalState.EXPIRED && prop.state != ProposalState.CANCELLED
-                && !(prop.state == ProposalState.OPEN && block.timestamp >= prop.deadline)
-        ) {
-            revert NotWithdrawable();
-        }
-        if (prop.state == ProposalState.OPEN) {
-            prop.state = ProposalState.EXPIRED;
-        }
-
-        // Full refund of GROSS amount (including fee portion) since market never launched
-        uint256 gross = prop.committedGross[msg.sender];
-        if (gross == 0) revert NothingToWithdraw();
-
-        // Zero out all tracking
-        uint256 n = prop.outcomeNames.length;
-        for (uint256 i; i < n; i++) {
-            prop.committed[msg.sender][i] = 0;
-        }
-        prop.committedGross[msg.sender] = 0;
-
-        if (!usdc.transfer(msg.sender, gross)) revert TransferFailed();
-        emit CommitmentWithdrawn(proposalId, msg.sender, gross);
+        proposalId;
+        revert CommitmentsFinal();
     }
 
     function cancelProposal(bytes32 proposalId) external onlyOwner {
-        ProposalStorage storage prop = proposals[proposalId];
-        if (prop.state != ProposalState.OPEN) revert NotOpen();
-        prop.state = ProposalState.CANCELLED;
-        emit ProposalCancelled(proposalId);
+        proposalId;
+        revert CommitmentsFinal();
     }
 
     function claimRefund() external {
@@ -920,7 +942,8 @@ contract Launchpad is OwnableRoles {
             oracle: prop.oracle,
             metadata: prop.metadata,
             outcomeNames: prop.outcomeNames,
-            deadline: prop.deadline,
+            gender: prop.gender,
+            launchTs: _launchTimestamp(prop),
             createdAt: prop.createdAt,
             state: prop.state,
             marketId: prop.marketId,
@@ -945,18 +968,22 @@ contract Launchpad is OwnableRoles {
         return proposals[proposalId].claimed[user];
     }
 
-    function getMarketKey(string calldata name, uint16 year, string calldata region) external pure returns (bytes32) {
+    function getMarketKey(string calldata name, Gender gender, uint16 year, string calldata region)
+        external
+        pure
+        returns (bytes32)
+    {
         string memory upperRegion = bytes(region).length > 0 ? _toUpperCase(region) : region;
-        return keccak256(abi.encode(_toLowerCase(name), year, upperRegion));
+        return keccak256(abi.encode(_toLowerCase(name), gender, year, upperRegion));
     }
 
-    function getProposalByMarketKey(string calldata name, uint16 year, string calldata region)
+    function getProposalByMarketKey(string calldata name, Gender gender, uint16 year, string calldata region)
         external
         view
         returns (bytes32)
     {
         string memory upperRegion = bytes(region).length > 0 ? _toUpperCase(region) : region;
-        bytes32 key = keccak256(abi.encode(_toLowerCase(name), year, upperRegion));
+        bytes32 key = keccak256(abi.encode(_toLowerCase(name), gender, year, upperRegion));
         return marketKeyToProposal[key];
     }
 

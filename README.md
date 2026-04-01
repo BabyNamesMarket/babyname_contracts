@@ -25,7 +25,6 @@ Users bet on whether baby names will appear in the Social Security Administratio
 | **PredictionMarket** | LS-LMSR market maker with 3% trading fee |
 | **Launchpad** | Commitment bootstrapping with 5% fee, gender/year/region scoping |
 | **OutcomeToken** | ERC20 per outcome (YES/NO), 6 decimals |
-| **RewardDistributor** | Merkle-based USDC reward distribution |
 
 Based on [Context Markets](https://github.com/contextwtf/contracts), used under license.
 
@@ -57,7 +56,6 @@ Names are lowercased for validation and uniqueness. Merkle roots and manual appr
 | PredictionMarket | [`0x7000...6F6c`](https://sepolia.basescan.org/address/0x7000667CF33833F97120a13b4D12A795142f6F6c) |
 | Launchpad | [`0x08ED...882b`](https://sepolia.basescan.org/address/0x08EDA78b3434A7774Cb4a012B2D7c8231F09882b) |
 | TestUSDC | [`0x43fA...A575`](https://sepolia.basescan.org/address/0x43fAbD625f96b93edAC2F370a2fe246b2E09A575) |
-| RewardDistributor | [`0x5B74...9Fe0`](https://sepolia.basescan.org/address/0x5B740001E88B2df9e96e84B75f7150496fA19Fe0) |
 
 ## Quick Start
 
@@ -90,7 +88,7 @@ const deploy = getDeployment(CHAIN_IDS.baseSepolia);
 - [LMSR Pricing](docs/lmsr.md)
 - [Integration Guide](docs/integration.md)
 - [Deployment](docs/deployment.md)
-- API Reference: [PredictionMarket](docs/api/prediction-market.md) | [Launchpad](docs/api/launchpad.md) | [OutcomeToken](docs/api/outcome-token.md) | [RewardDistributor](docs/api/reward-distributor.md)
+- API Reference: [PredictionMarket](docs/api/prediction-market.md) | [Launchpad](docs/api/launchpad.md) | [OutcomeToken](docs/api/outcome-token.md)
 
 ## License
 

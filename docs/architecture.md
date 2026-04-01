@@ -54,10 +54,6 @@ The core LMSR automated market maker:
 
 Minimal ERC20 (6 decimals, matching USDC) deployed as deterministic clones via `LibClone`. Each market gets one token per outcome (typically YES and NO). Only PredictionMarket can mint/burn.
 
-## RewardDistributor
-
-Independent Merkle-based reward system for distributing USDC rewards (promotional campaigns, referral bonuses). Not involved in market mechanics.
-
 ## Role Model
 
 | Role | Who | Can Do |

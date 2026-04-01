@@ -4,7 +4,6 @@ const path = require("path");
 const PredictionMarketABI = require("./abi/PredictionMarket.json");
 const LaunchpadABI = require("./abi/Launchpad.json");
 const OutcomeTokenABI = require("./abi/OutcomeToken.json");
-const RewardDistributorABI = require("./abi/RewardDistributor.json");
 
 function getDeployment(chainId) {
   const filePath = path.join(__dirname, "deployments", `${chainId}.json`);
@@ -25,7 +24,6 @@ module.exports = {
   PredictionMarketABI,
   LaunchpadABI,
   OutcomeTokenABI,
-  RewardDistributorABI,
   getDeployment,
   CHAIN_IDS,
 };

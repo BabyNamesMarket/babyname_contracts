@@ -28,7 +28,6 @@ export-abi:
 	forge inspect PredictionMarket abi --json > abi/PredictionMarket.json
 	forge inspect Launchpad abi --json > abi/Launchpad.json
 	forge inspect OutcomeToken abi --json > abi/OutcomeToken.json
-	forge inspect RewardDistributor abi --json > abi/RewardDistributor.json
 	@echo "ABIs exported to abi/"
 
 # Local dev

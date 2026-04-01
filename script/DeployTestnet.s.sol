@@ -6,7 +6,6 @@ import "forge-std/StdJson.sol";
 import "../src/PredictionMarket.sol";
 import "../src/Launchpad.sol";
 import "../src/OutcomeToken.sol";
-import "../src/RewardDistributor.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
@@ -94,10 +93,6 @@ contract DeployTestnet is Script {
         vault.setNamesMerkleRoot(Launchpad.Gender.GIRL, girlsRoot);
         console.log("Names merkle roots set");
 
-        // 7. Deploy RewardDistributor
-        RewardDistributor rd = new RewardDistributor(collateralToken, deployer);
-        console.log("RewardDistributor:", address(rd));
-
         vm.stopBroadcast();
 
         // Write deployment artifact
@@ -107,7 +102,6 @@ contract DeployTestnet is Script {
             '","Launchpad":"', vm.toString(address(vault)),
             '","TestUSDC":"', vm.toString(collateralToken),
             '","CollateralToken":"', vm.toString(collateralToken),
-            '","RewardDistributor":"', vm.toString(address(rd)),
             '","OutcomeTokenImpl":"', vm.toString(pm.outcomeTokenImplementation()),
             '","chainId":', chainIdStr,
             ',"deployer":"', vm.toString(deployer),

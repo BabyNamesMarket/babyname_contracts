@@ -13,7 +13,6 @@ import {
   PredictionMarketABI,
   LaunchpadABI,
   OutcomeTokenABI,
-  RewardDistributorABI,
   getDeployment,
   CHAIN_IDS,
 } from "@babynamesmarket/contracts";
@@ -29,7 +28,6 @@ const deploy = getDeployment(CHAIN_IDS.baseSepolia);
 // deploy.Launchpad - address
 // deploy.TestUSDC - address (testnet only)
 // deploy.CollateralToken - address
-// deploy.RewardDistributor - address
 // deploy.OutcomeTokenImpl - address
 ```
 

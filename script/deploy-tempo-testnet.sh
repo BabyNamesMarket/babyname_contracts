@@ -20,7 +20,6 @@ MARKET_CREATION_FEE="${MARKET_CREATION_FEE:-5000000}"
 FEE_SOURCE="${FEE_SOURCE:-$DEPLOYER}"
 PM_GAS_LIMIT="${PM_GAS_LIMIT:-30000000}"
 VAULT_GAS_LIMIT="${VAULT_GAS_LIMIT:-8000000}"
-RD_GAS_LIMIT="${RD_GAS_LIMIT:-5000000}"
 
 echo "Deploying via forge script: $SCRIPT"
 echo "RPC: $RPC"
@@ -86,13 +85,8 @@ if [ -n "${COLLATERAL_TOKEN_ADDRESS:-}" ]; then
   cast send "$PREDICTION_MARKET" "grantMarketCreatorRole(address)" "$VAULT" --rpc-url "$RPC" --private-key "$PRIVATE_KEY" >/dev/null
   cast send "$PREDICTION_MARKET" "grantEscrowManagerRole(address)" "$VAULT" --rpc-url "$RPC" --private-key "$PRIVATE_KEY" >/dev/null
 
-  REWARD_DISTRIBUTOR=$(deploy_contract src/RewardDistributor.sol:RewardDistributor "$RD_GAS_LIMIT" \
-    --constructor-args \
-    "$COLLATERAL" \
-    "$DEPLOYER")
-
   cat > "$ARTIFACT" <<EOF
-{"PredictionMarket":"$PREDICTION_MARKET","Vault":"$VAULT","TestUSDC":"$COLLATERAL","CollateralToken":"$COLLATERAL","RewardDistributor":"$REWARD_DISTRIBUTOR","chainId":$CHAIN_ID,"deployer":"$DEPLOYER","oracle":"$DEPLOYER","surplusRecipient":"$DEPLOYER"}
+{"PredictionMarket":"$PREDICTION_MARKET","Vault":"$VAULT","TestUSDC":"$COLLATERAL","CollateralToken":"$COLLATERAL","chainId":$CHAIN_ID,"deployer":"$DEPLOYER","oracle":"$DEPLOYER","surplusRecipient":"$DEPLOYER"}
 EOF
 else
   forge script "$SCRIPT" \

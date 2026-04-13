@@ -39,7 +39,10 @@ deploy-local:
 
 # Base Sepolia
 deploy-base-sepolia:
-	bash script/deploy-base-sepolia.sh
+	DEPLOY_STAGE=commit bash script/deploy-base-sepolia.sh
+
+deploy-base-sepolia-live:
+	DEPLOY_STAGE=live bash script/deploy-base-sepolia.sh
 
 # Tempo testnet (uses shell script due to Tempo gas estimation requirements)
 deploy-tempo-testnet:

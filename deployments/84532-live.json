@@ -1,19 +1,20 @@
 {
-  "PredictionMarket": "0x2930611FB502634C5f444bcC49af25E1C9326b04",
-  "Launchpad": "0x44A1CFFFc2837f8233d91fa5b27CE2450Db97Ed9",
-  "TestUSDC": "0x43fAbD625f96b93edAC2F370a2fe246b2E09A575",
-  "CollateralToken": "0x43fAbD625f96b93edAC2F370a2fe246b2E09A575",
-  "OutcomeTokenImpl": "0x6059742d60E0D25962A940d7A0f5C650ecd57af1",
+  "PredictionMarket": "0x8B7C3000975254C6cC5356Af94f6Ca31474076A0",
+  "Launchpad": "0x72D1a534cF8E10601a311E798927aFa319bD2CeF",
+  "TestUSDC": "0xEc33E76d2C364Bd470B74ce2Af75a25773A828A6",
+  "CollateralToken": "0xEc33E76d2C364Bd470B74ce2Af75a25773A828A6",
+  "OutcomeTokenImpl": "0xA1F56f2d8FbD153F2Eda25571A7481ec3eDE31e2",
   "chainId": 84532,
   "deployer": "0x312e253d1C18b92112aD2276Ade650FE7E620D1a",
   "oracle": "0x312e253d1C18b92112aD2276Ade650FE7E620D1a",
   "surplusRecipient": "0x312e253d1C18b92112aD2276Ade650FE7E620D1a",
+  "stage": "live",
   "goldsky": {
     "projectId": "project_cmnfucw0yiuar01y0347j7weu",
     "subgraph": "babynames-market-base-sepolia/1.0.0",
     "chain": "base-sepolia",
     "endpoint": "https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/babynames-market-base-sepolia/1.0.0/gn",
-    "startBlock": 40158630,
+    "startBlock": 40159038,
     "abis": {
       "PredictionMarket": "./abi/PredictionMarket.json",
       "Launchpad": "./abi/Launchpad.json"
@@ -21,14 +22,14 @@
     "instances": [
       {
         "abi": "PredictionMarket",
-        "address": "0x2930611FB502634C5f444bcC49af25E1C9326b04",
-        "startBlock": 40158630,
+        "address": "0x8B7C3000975254C6cC5356Af94f6Ca31474076A0",
+        "startBlock": 40159038,
         "chain": "base-sepolia"
       },
       {
         "abi": "Launchpad",
-        "address": "0x44A1CFFFc2837f8233d91fa5b27CE2450Db97Ed9",
-        "startBlock": 40158630,
+        "address": "0x72D1a534cF8E10601a311E798927aFa319bD2CeF",
+        "startBlock": 40159038,
         "chain": "base-sepolia"
       }
     ]

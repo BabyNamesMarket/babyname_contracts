@@ -3,8 +3,12 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
-const DEPLOYMENT_PATH = path.join(ROOT, "deployments/84532.json");
-const BROADCAST_PATH = path.join(ROOT, "broadcast/DeployTestnet.s.sol/84532/run-latest.json");
+const STAGE = process.env.DEPLOY_STAGE || "commit";
+const DEPLOYMENT_PATH = STAGE === "commit"
+  ? path.join(ROOT, "deployments/84532.json")
+  : path.join(ROOT, `deployments/84532-${STAGE}.json`);
+const BROADCAST_SCRIPT = STAGE === "live" ? "DeployTestnetLive.s.sol" : "DeployTestnet.s.sol";
+const BROADCAST_PATH = path.join(ROOT, `broadcast/${BROADCAST_SCRIPT}/84532/run-latest.json`);
 
 function requireFile(filePath) {
   if (!fs.existsSync(filePath)) {

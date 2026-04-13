@@ -122,6 +122,7 @@ contract Launchpad is OwnableRoles {
         uint256 actualCost;
         uint256 tradingBudget;
         uint256[] totalSharesPerOutcome;
+        bool requiresApproval;
     }
 
     struct ProposalStorage {
@@ -149,6 +150,7 @@ contract Launchpad is OwnableRoles {
         mapping(address => uint256) committedGross;    // GROSS per user (for full refund)
         mapping(address => bool) hasCommitted;
         mapping(address => bool) claimed;
+        bool requiresApproval;
     }
 
     mapping(bytes32 => ProposalStorage) internal proposals;
@@ -159,6 +161,16 @@ contract Launchpad is OwnableRoles {
     mapping(bytes32 => bytes32) public marketKeyToProposal;
 
     mapping(address => uint256) public pendingRefunds;
+
+    // ========== BUY PROXY ==========
+
+    /// @notice Trading fee for buy() proxy, in bps (3% = 300, matching PM default)
+    uint256 public proxyTradingFeeBps = 300;
+    uint256 public constant MAX_PROXY_TRADING_FEE_BPS = 1000;
+
+    // ========== REENTRANCY ==========
+
+    uint256 private _locked;
 
     // ========== EVENTS ==========
 
@@ -201,6 +213,15 @@ contract Launchpad is OwnableRoles {
     event YearLaunchDateUpdated(uint16 indexed year, uint256 oldDate, uint256 newDate);
     event PostBatchMinThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     event PostBatchTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
+    event ProposalApproved(bytes32 indexed proposalId);
+    event ProxyBuy(
+        bytes32 indexed proposalId,
+        bytes32 indexed marketId,
+        address indexed trader,
+        int256 costDelta,
+        uint256 fee
+    );
+    event ProxyTradingFeeBpsUpdated(uint256 oldBps, uint256 newBps);
 
     // ========== ERRORS ==========
 
@@ -232,6 +253,11 @@ contract Launchpad is OwnableRoles {
     error CommitmentsFinal();
     error DuplicateQuestionId();
     error InvalidGender();
+    error NameNotApproved();
+    error BuyOnly();
+    error NotCancelled();
+    error Reentrancy();
+    error AlreadyApproved();
 
     constructor(
         address _predictionMarket,
@@ -414,6 +440,12 @@ contract Launchpad is OwnableRoles {
         postBatchTimeout = _timeout;
     }
 
+    function setProxyTradingFeeBps(uint256 _bps) external onlyOwner {
+        if (_bps > MAX_PROXY_TRADING_FEE_BPS) revert FeeTooHigh();
+        emit ProxyTradingFeeBpsUpdated(proxyTradingFeeBps, _bps);
+        proxyTradingFeeBps = _bps;
+    }
+
     function setUsdcAllowance(uint256 amount) external onlyOwner {
         usdc.approve(address(predictionMarket), amount);
     }
@@ -516,7 +548,7 @@ contract Launchpad is OwnableRoles {
         bytes32[] calldata proof,
         uint256[] calldata amounts
     ) internal returns (bytes32) {
-        if (!isValidName(name, gender, proof)) revert InvalidName();
+        bool nameValid = isValidName(name, gender, proof);
         if (!yearOpen[year]) revert YearNotOpen();
         if (!isValidRegion(region)) revert InvalidRegion();
         if (defaultOracle == address(0)) revert DefaultsNotSet();
@@ -569,6 +601,7 @@ contract Launchpad is OwnableRoles {
         prop.name = lowered;
         prop.year = year;
         prop.region = upperRegion;
+        prop.requiresApproval = !nameValid;
 
         marketKeyToProposal[marketKey] = proposalId;
         questionIdToProposal[questionId] = proposalId;
@@ -712,19 +745,28 @@ contract Launchpad is OwnableRoles {
 
     /**
      * @notice Launches a market once launch eligibility is met. Callable by anyone.
-     *         A commitment fee is deducted from grossCommitted:
-     *         - Up to maxCreationFee funds phantom shares (market creation fee)
-     *         - Excess fees are sent to surplusRecipient as protocol revenue
-     *         - Remaining net funds are used for the aggregate LMSR trade
-     *         Share distribution is deferred to claimShares().
+     *         Idempotent — no-op if already launched.
      */
     function launchMarket(bytes32 proposalId) external {
+        _ensureLaunched(proposalId);
+    }
+
+    function _ensureLaunched(bytes32 proposalId) internal {
         ProposalStorage storage prop = proposals[proposalId];
+        if (prop.state == ProposalState.LAUNCHED) return;
         if (prop.state != ProposalState.OPEN) revert NotOpen();
-
+        if (prop.requiresApproval) revert NameNotApproved();
         if (block.timestamp < _launchTimestamp(prop)) revert NotEligibleForLaunch();
+        _launchCore(proposalId);
+    }
 
-        // Proposal must have at least $1 gross committed.
+    /**
+     * @dev Core launch logic: fee math, market creation, binary search, aggregate trade.
+     *      Caller must have already validated state, approval, and timing.
+     */
+    function _launchCore(bytes32 proposalId) internal {
+        ProposalStorage storage prop = proposals[proposalId];
+
         if (prop.totalCommitted < MIN_TOTAL_COMMITMENT) revert BelowThreshold();
 
         prop.state = ProposalState.LAUNCHED;
@@ -768,10 +810,6 @@ contract Launchpad is OwnableRoles {
         prop.marketId = marketId;
 
         // 2. Binary search for aggregate trade using only this proposal's remaining budget.
-        //    This is the proposal's gross commitment minus fees already sent to treasury
-        //    and minus the actual market-creation charge paid to PredictionMarket.
-        //    Never use the Launchpad's pooled USDC balance here, or one proposal can
-        //    spend funds that belong to another proposal or already-assigned refunds.
         PredictionMarket.MarketInfo memory info = predictionMarket.getMarketInfo(marketId);
         uint256 creationCostCharged = balanceBeforeCreate - balanceAfterCreate;
         uint256 tradingBudget = prop.totalCommitted - excessFees - creationCostCharged;
@@ -789,7 +827,6 @@ contract Launchpad is OwnableRoles {
             }
 
             if (hasNonZero) {
-                // Fee-exempt trade: Launchpad already collected 5% commitment fee
                 predictionMarket.tradeRaw(
                     PredictionMarket.Trade({
                         marketId: marketId,
@@ -802,9 +839,7 @@ contract Launchpad is OwnableRoles {
             }
         }
 
-        // 4. Store results for lazy claimShares()
-        //    tradingBudget = this proposal's net committed USDC
-        //    actualCost = USDC spent on this proposal's aggregate trade
+        // 4. Store results for claimShares()
         prop.tradingBudget = tradingBudget;
         uint256 balAfterTrade = usdc.balanceOf(address(this));
         prop.actualCost = balBeforeTrade > balAfterTrade ? balBeforeTrade - balAfterTrade : 0;
@@ -828,8 +863,12 @@ contract Launchpad is OwnableRoles {
      *         Refund is proportional share of unspent net trading funds.
      */
     function claimShares(bytes32 proposalId) external {
+        if (_locked != 0) revert Reentrancy();
+        _locked = 1;
+
+        _ensureLaunched(proposalId);
+
         ProposalStorage storage prop = proposals[proposalId];
-        if (prop.state != ProposalState.LAUNCHED) revert NotLaunched();
         if (prop.claimed[msg.sender]) revert AlreadyClaimed();
         if (prop.committed[msg.sender].length == 0) revert NothingToClaim();
 
@@ -868,6 +907,88 @@ contract Launchpad is OwnableRoles {
         }
 
         emit SharesClaimed(proposalId, msg.sender, userShares, refund);
+
+        _locked = 0;
+    }
+
+    // ========== BUY PROXY ==========
+
+    /**
+     * @notice Buy outcome tokens with lazy launch. If the market hasn't launched yet
+     *         (but is past the commit window), this triggers the launch first.
+     *         Buy-only — sells go directly through PredictionMarket.
+     * @param proposalId The proposal to buy into
+     * @param deltaShares Per-outcome share amounts to buy (must all be >= 0)
+     * @param maxCost Maximum USDC to spend (including proxy fee)
+     * @param deadline Block timestamp deadline for the trade
+     */
+    function buy(
+        bytes32 proposalId,
+        int256[] calldata deltaShares,
+        uint256 maxCost,
+        uint256 deadline
+    ) external returns (int256) {
+        if (_locked != 0) revert Reentrancy();
+        _locked = 1;
+
+        _ensureLaunched(proposalId);
+
+        ProposalStorage storage prop = proposals[proposalId];
+        bytes32 marketId = prop.marketId;
+        uint256 n = deltaShares.length;
+
+        // Buy-only: all deltas must be non-negative
+        for (uint256 i; i < n; i++) {
+            if (deltaShares[i] < 0) revert BuyOnly();
+        }
+
+        // Pull maxCost USDC from user
+        if (!usdc.transferFrom(msg.sender, address(this), maxCost)) revert TransferFailed();
+
+        // Execute fee-exempt trade via tradeRaw
+        int256 costDelta = predictionMarket.tradeRaw(
+            PredictionMarket.Trade({
+                marketId: marketId,
+                deltaShares: deltaShares,
+                maxCost: maxCost, // tradeRaw will revert if LMSR cost exceeds this
+                minPayout: 0,
+                deadline: deadline
+            })
+        );
+
+        uint256 lmsrCost = uint256(costDelta);
+
+        // Compute fee on top of LMSR cost (matching PM formula)
+        uint256 fee;
+        if (proxyTradingFeeBps > 0) {
+            fee = FixedPointMathLib.mulDiv(lmsrCost, proxyTradingFeeBps, 10000 - proxyTradingFeeBps);
+        }
+
+        // Send fee to surplus recipient
+        if (fee > 0) {
+            if (!usdc.transfer(surplusRecipient, fee)) revert TransferFailed();
+        }
+
+        // Transfer outcome tokens to user
+        PredictionMarket.MarketInfo memory mInfo = predictionMarket.getMarketInfo(marketId);
+        for (uint256 i; i < n; i++) {
+            if (deltaShares[i] > 0) {
+                if (!IERC20(mInfo.outcomeTokens[i]).transfer(msg.sender, uint256(deltaShares[i]))) {
+                    revert TransferFailed();
+                }
+            }
+        }
+
+        // Refund unused USDC
+        uint256 totalSpent = lmsrCost + fee;
+        if (totalSpent < maxCost) {
+            if (!usdc.transfer(msg.sender, maxCost - totalSpent)) revert TransferFailed();
+        }
+
+        emit ProxyBuy(proposalId, marketId, msg.sender, costDelta, fee);
+
+        _locked = 0;
+        return costDelta;
     }
 
     // ========== BINARY SEARCH ==========
@@ -913,16 +1034,39 @@ contract Launchpad is OwnableRoles {
         }
     }
 
-    // ========== WITHDRAWALS ==========
+    // ========== APPROVAL / CANCEL ==========
 
-    function withdrawCommitment(bytes32 proposalId) external {
-        proposalId;
-        revert CommitmentsFinal();
+    function approveProposal(bytes32 proposalId) external onlyOwner {
+        ProposalStorage storage prop = proposals[proposalId];
+        if (prop.state != ProposalState.OPEN) revert NotOpen();
+        if (!prop.requiresApproval) revert AlreadyApproved();
+        prop.requiresApproval = false;
+        bytes32 nameHash = _nameKey(prop.name, prop.gender);
+        approvedNames[nameHash] = true;
+        emit NameApproved(prop.name, prop.gender);
+        emit ProposalApproved(proposalId);
     }
 
     function cancelProposal(bytes32 proposalId) external onlyOwner {
-        proposalId;
-        revert CommitmentsFinal();
+        ProposalStorage storage prop = proposals[proposalId];
+        if (prop.state != ProposalState.OPEN) revert NotOpen();
+        if (!prop.requiresApproval) revert CommitmentsFinal();
+        prop.state = ProposalState.CANCELLED;
+        // Clear mappings so the same name can be re-proposed
+        questionIdToProposal[prop.questionId] = bytes32(0);
+        emit ProposalCancelled(proposalId);
+    }
+
+    // ========== WITHDRAWALS ==========
+
+    function withdrawCommitment(bytes32 proposalId) external {
+        ProposalStorage storage prop = proposals[proposalId];
+        if (prop.state != ProposalState.CANCELLED) revert NotCancelled();
+        uint256 gross = prop.committedGross[msg.sender];
+        if (gross == 0) revert NothingToClaim();
+        prop.committedGross[msg.sender] = 0;
+        pendingRefunds[msg.sender] += gross;
+        emit CommitmentWithdrawn(proposalId, msg.sender, gross);
     }
 
     function claimRefund() external {
@@ -956,7 +1100,8 @@ contract Launchpad is OwnableRoles {
             region: prop.region,
             actualCost: prop.actualCost,
             tradingBudget: prop.tradingBudget,
-            totalSharesPerOutcome: prop.totalSharesPerOutcome
+            totalSharesPerOutcome: prop.totalSharesPerOutcome,
+            requiresApproval: prop.requiresApproval
         });
     }
 

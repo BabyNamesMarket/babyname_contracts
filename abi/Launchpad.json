@@ -45,6 +45,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_PROXY_TRADING_FEE_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MIN_TOTAL_COMMITMENT",
     "inputs": [],
     "outputs": [
@@ -138,6 +151,19 @@
   },
   {
     "type": "function",
+    "name": "approveProposal",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "approvedNames",
     "inputs": [
       {
@@ -154,6 +180,40 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "buy",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "deltaShares",
+        "type": "int256[]",
+        "internalType": "int256[]"
+      },
+      {
+        "name": "maxCost",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256",
+        "internalType": "int256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -509,6 +569,11 @@
             "name": "totalSharesPerOutcome",
             "type": "uint256[]",
             "internalType": "uint256[]"
+          },
+          {
+            "name": "requiresApproval",
+            "type": "bool",
+            "internalType": "bool"
           }
         ]
       }
@@ -1047,6 +1112,19 @@
   },
   {
     "type": "function",
+    "name": "proxyTradingFeeBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "questionIdToProposal",
     "inputs": [
       {
@@ -1237,6 +1315,19 @@
     "inputs": [
       {
         "name": "_timeout",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setProxyTradingFeeBps",
+    "inputs": [
+      {
+        "name": "_bps",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1750,6 +1841,19 @@
   },
   {
     "type": "event",
+    "name": "ProposalApproved",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ProposalCancelled",
     "inputs": [
       {
@@ -1809,6 +1913,62 @@
       },
       {
         "name": "launchTs",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProxyBuy",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "marketId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "costDelta",
+        "type": "int256",
+        "indexed": false,
+        "internalType": "int256"
+      },
+      {
+        "name": "fee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProxyTradingFeeBpsUpdated",
+    "inputs": [
+      {
+        "name": "oldBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newBps",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1983,6 +2143,11 @@
   },
   {
     "type": "error",
+    "name": "AlreadyApproved",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AlreadyClaimed",
     "inputs": []
   },
@@ -1994,6 +2159,11 @@
   {
     "type": "error",
     "name": "BelowThreshold",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BuyOnly",
     "inputs": []
   },
   {
@@ -2078,12 +2248,22 @@
   },
   {
     "type": "error",
+    "name": "NameNotApproved",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NewOwnerIsZeroAddress",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NoHandoverRequest",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotCancelled",
     "inputs": []
   },
   {
@@ -2119,6 +2299,11 @@
   {
     "type": "error",
     "name": "ProposalExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Reentrancy",
     "inputs": []
   },
   {

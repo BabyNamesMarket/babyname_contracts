@@ -31,7 +31,7 @@ contract TestUSDC is ERC20 {
 contract DeployTestnet is Script {
     using stdJson for string;
 
-    function run() external {
+    function run() external virtual {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
         address collateralToken = vm.envOr("COLLATERAL_TOKEN_ADDRESS", address(0));
@@ -111,6 +111,8 @@ contract DeployTestnet is Script {
         );
         string memory path = string.concat("deployments/", chainIdStr, ".json");
         vm.writeFile(path, json);
+        string memory commitPath = string.concat("deployments/", chainIdStr, "-commit.json");
+        vm.writeFile(commitPath, json);
         console.log("Deployment artifact written to", path);
     }
 }

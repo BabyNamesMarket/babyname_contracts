@@ -226,13 +226,13 @@ contract LaunchpadEdgeTest is Test {
         launchpad.claimShares(proposalId);
     }
 
-    // ========== 6. WITHDRAW DISABLED ==========
+    // ========== 6. WITHDRAW ==========
 
-    function test_withdrawBeforeLaunch_reverts_commitmentsFinal() public {
+    function test_withdrawBeforeLaunch_reverts_notCancelled() public {
         bytes32 proposalId = _proposeAs(alice, "Early", 2025, 5e6, 5e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
+        vm.expectRevert(Launchpad.NotCancelled.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 
@@ -522,13 +522,13 @@ contract LaunchpadEdgeTest is Test {
         launchpad.commit(proposalId, amounts);
     }
 
-    // ========== 15. WITHDRAW ALWAYS REVERTS ==========
+    // ========== 15. WITHDRAW REQUIRES CANCELLED ==========
 
-    function test_withdrawAlwaysReverts() public {
+    function test_withdrawRequiresCancelled() public {
         bytes32 proposalId = _proposeAs(alice, "DoubleW", 2025, 10e6, 10e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
+        vm.expectRevert(Launchpad.NotCancelled.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 

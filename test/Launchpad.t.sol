@@ -319,17 +319,17 @@ contract LaunchpadTest is Test {
 
     // ========== 9. COMMITMENTS FINAL ==========
 
-    function test_withdrawCommitment_reverts_commitmentsFinal() public {
+    function test_withdrawCommitment_reverts_notCancelled() public {
         bytes32 proposalId = _proposeAsAlice("Charlotte", 2025, 5e6, 5e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
+        vm.expectRevert(Launchpad.NotCancelled.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 
-    // ========== 10. CANCEL DISABLED ==========
+    // ========== 10. CANCEL ==========
 
-    function test_cancelProposal_reverts_commitmentsFinal() public {
+    function test_cancelProposal_approvedName_reverts() public {
         bytes32 proposalId = _proposeAsAlice("Amelia", 2025, 5e6, 5e6);
         vm.expectRevert(Launchpad.CommitmentsFinal.selector);
         launchpad.cancelProposal(proposalId);
@@ -662,7 +662,7 @@ contract LaunchpadTest is Test {
         bytes32 proposalId = _proposeAsAlice("Mia", 2025, 50e6, 50e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.NotLaunched.selector);
+        vm.expectRevert(Launchpad.NotEligibleForLaunch.selector);
         launchpad.claimShares(proposalId);
     }
 
@@ -680,19 +680,19 @@ contract LaunchpadTest is Test {
         launchpad.claimShares(proposalId);
     }
 
-    // ========== 20. WITHDRAW DISABLED ==========
+    // ========== 20. WITHDRAW ==========
 
     function test_withdrawCommitment_revertsEvenBeforeLaunchTime() public {
         bytes32 proposalId = _proposeAsAlice("Charlotte", 2025, 5e6, 5e6);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.CommitmentsFinal.selector);
+        vm.expectRevert(Launchpad.NotCancelled.selector);
         launchpad.withdrawCommitment(proposalId);
     }
 
     // ========== 21. PROPOSE WITH INVALID NAME ==========
 
-    function test_propose_invalidNameReverts() public {
+    function test_propose_unapprovedName_createsWithRequiresApproval() public {
         bytes32 fakeRoot = keccak256("some merkle root");
         launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
 
@@ -702,8 +702,11 @@ contract LaunchpadTest is Test {
         bytes32[] memory emptyProof = new bytes32[](0);
 
         vm.prank(alice);
-        vm.expectRevert(Launchpad.InvalidName.selector);
-        launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        bytes32 proposalId = launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        assertTrue(proposalId != bytes32(0));
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertTrue(info.requiresApproval);
     }
 
     function test_approveName_isGenderSpecific() public {
@@ -717,13 +720,15 @@ contract LaunchpadTest is Test {
         amounts[1] = 5e6;
         bytes32[] memory emptyProof = new bytes32[](0);
 
+        // Girl proposal: approved name → requiresApproval = false
         vm.prank(alice);
-        bytes32 proposalId = launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
-        assertTrue(proposalId != bytes32(0));
+        bytes32 girlProposalId = launchpad.propose("Olivia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        assertFalse(launchpad.getProposal(girlProposalId).requiresApproval);
 
+        // Boy proposal: not approved for BOY → requiresApproval = true
         vm.prank(bob);
-        vm.expectRevert(Launchpad.InvalidName.selector);
-        launchpad.propose("Olivia", 2025, Launchpad.Gender.BOY, emptyProof, amounts);
+        bytes32 boyProposalId = launchpad.propose("Olivia", 2025, Launchpad.Gender.BOY, emptyProof, amounts);
+        assertTrue(launchpad.getProposal(boyProposalId).requiresApproval);
     }
 
     function test_genderSpecificMerkleRoots_acceptValidProofs() public {
@@ -742,5 +747,289 @@ contract LaunchpadTest is Test {
         assertTrue(launchpad.isValidName(girlName, Launchpad.Gender.GIRL, girlProof));
         assertFalse(launchpad.isValidName(girlName, Launchpad.Gender.BOY, girlProof));
         assertFalse(launchpad.isValidName(boyName, Launchpad.Gender.GIRL, boyProof));
+    }
+
+    // ========== 22. LAZY LAUNCH ==========
+
+    function test_claimShares_triggersLazyLaunch() public {
+        bytes32 proposalId = _proposeAsAlice("Isla", 2025, 100e6, 100e6);
+
+        _warpToLaunch(proposalId);
+        // No explicit launchMarket() call — claimShares triggers it
+        vm.prank(alice);
+        launchpad.claimShares(proposalId);
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.LAUNCHED));
+        assertTrue(info.marketId != bytes32(0));
+    }
+
+    function test_launchMarket_idempotent() public {
+        bytes32 proposalId = _proposeAsAlice("Ivy", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+        // Second call is a no-op — should not revert
+        launchpad.launchMarket(proposalId);
+    }
+
+    // ========== 23. BUY PROXY ==========
+
+    function test_buy_triggersLazyLaunchAndBuys() public {
+        bytes32 proposalId = _proposeAsAlice("Aria", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
+
+        // Bob buys through the proxy — triggers launch
+        usdc.mint(bob, 100e6);
+        vm.prank(bob);
+        usdc.approve(address(launchpad), type(uint256).max);
+
+        int256[] memory delta = new int256[](2);
+        delta[0] = 10e6; // buy 10 YES shares
+        delta[1] = 0;
+
+        vm.prank(bob);
+        launchpad.buy(proposalId, delta, 50e6, block.timestamp);
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.LAUNCHED));
+
+        // Bob should have YES tokens
+        PredictionMarket.MarketInfo memory mInfo = pm.getMarketInfo(info.marketId);
+        uint256 bobYes = IERC20(mInfo.outcomeTokens[0]).balanceOf(bob);
+        assertEq(bobYes, 10e6);
+    }
+
+    function test_buy_alreadyLaunched_justBuys() public {
+        bytes32 proposalId = _proposeAsAlice("Zoe", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+
+        usdc.mint(bob, 100e6);
+        vm.prank(bob);
+        usdc.approve(address(launchpad), type(uint256).max);
+
+        int256[] memory delta = new int256[](2);
+        delta[0] = 5e6;
+        delta[1] = 0;
+
+        vm.prank(bob);
+        launchpad.buy(proposalId, delta, 50e6, block.timestamp);
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        PredictionMarket.MarketInfo memory mInfo = pm.getMarketInfo(info.marketId);
+        assertEq(IERC20(mInfo.outcomeTokens[0]).balanceOf(bob), 5e6);
+    }
+
+    function test_buy_feeGoesToSurplus() public {
+        bytes32 proposalId = _proposeAsAlice("Cora", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+
+        usdc.mint(bob, 100e6);
+        vm.prank(bob);
+        usdc.approve(address(launchpad), type(uint256).max);
+
+        uint256 treasuryBefore = usdc.balanceOf(treasury);
+
+        int256[] memory delta = new int256[](2);
+        delta[0] = 5e6;
+        delta[1] = 0;
+
+        vm.prank(bob);
+        launchpad.buy(proposalId, delta, 50e6, block.timestamp);
+
+        uint256 treasuryAfter = usdc.balanceOf(treasury);
+        assertTrue(treasuryAfter > treasuryBefore, "fee should have gone to treasury");
+    }
+
+    function test_buy_negativeDeltaReverts() public {
+        bytes32 proposalId = _proposeAsAlice("Lily", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+
+        int256[] memory delta = new int256[](2);
+        delta[0] = -5e6;
+        delta[1] = 0;
+
+        vm.prank(alice);
+        vm.expectRevert(Launchpad.BuyOnly.selector);
+        launchpad.buy(proposalId, delta, 50e6, block.timestamp);
+    }
+
+    function test_buy_refundsUnusedUsdc() public {
+        bytes32 proposalId = _proposeAsAlice("Nora", 2025, 100e6, 100e6);
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+
+        usdc.mint(bob, 100e6);
+        vm.prank(bob);
+        usdc.approve(address(launchpad), type(uint256).max);
+
+        uint256 bobBefore = usdc.balanceOf(bob);
+
+        int256[] memory delta = new int256[](2);
+        delta[0] = 1e6; // small buy
+        delta[1] = 0;
+
+        vm.prank(bob);
+        launchpad.buy(proposalId, delta, 50e6, block.timestamp); // large maxCost
+
+        uint256 bobAfter = usdc.balanceOf(bob);
+        // Bob should get most of the 50e6 back (only LMSR cost + fee deducted)
+        assertTrue(bobAfter > bobBefore - 10e6, "most USDC should be refunded");
+    }
+
+    // ========== 24. UNAPPROVED NAME PROPOSALS ==========
+
+    function test_commit_toUnapprovedProposal_succeeds() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Zephyrella", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        assertTrue(launchpad.getProposal(proposalId).requiresApproval);
+
+        // Bob can also commit
+        _commitAsBob(proposalId, 5e6, 5e6);
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertEq(info.committers.length, 2);
+    }
+
+    function test_launchMarket_unapproved_revertsNameNotApproved() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Xanthe", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+
+        _warpToLaunch(proposalId);
+        vm.expectRevert(Launchpad.NameNotApproved.selector);
+        launchpad.launchMarket(proposalId);
+    }
+
+    function test_buy_unapproved_revertsNameNotApproved() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Calista", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+
+        _warpToLaunch(proposalId);
+        int256[] memory delta = new int256[](2);
+        delta[0] = 1e6;
+        delta[1] = 0;
+
+        vm.prank(alice);
+        vm.expectRevert(Launchpad.NameNotApproved.selector);
+        launchpad.buy(proposalId, delta, 10e6, block.timestamp);
+    }
+
+    function test_approveProposal_clearsFlag_thenCanLaunch() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Elowen", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        assertTrue(launchpad.getProposal(proposalId).requiresApproval);
+
+        launchpad.approveProposal(proposalId);
+        assertFalse(launchpad.getProposal(proposalId).requiresApproval);
+
+        _warpToLaunch(proposalId);
+        launchpad.launchMarket(proposalId);
+        assertEq(uint256(launchpad.getProposal(proposalId).state), uint256(Launchpad.ProposalState.LAUNCHED));
+    }
+
+    function test_cancelProposal_unapproved_setsStateCancelled() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Ondine", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+
+        launchpad.cancelProposal(proposalId);
+        assertEq(uint256(launchpad.getProposal(proposalId).state), uint256(Launchpad.ProposalState.CANCELLED));
+    }
+
+    function test_withdrawCommitment_afterCancel_fullRefundIncludingFee() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId = launchpad.propose("Aurelia", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+
+        uint256 aliceBefore = usdc.balanceOf(alice);
+
+        launchpad.cancelProposal(proposalId);
+
+        vm.prank(alice);
+        launchpad.withdrawCommitment(proposalId);
+
+        vm.prank(alice);
+        launchpad.claimRefund();
+
+        uint256 aliceAfter = usdc.balanceOf(alice);
+        // Full gross refund: 10e6 (5e6 + 5e6 including the 5% fee)
+        assertEq(aliceAfter - aliceBefore, 10e6, "full gross amount refunded");
+    }
+
+    function test_withdrawCommitment_notCancelled_reverts() public {
+        bytes32 proposalId = _proposeAsAlice("Stella", 2025, 5e6, 5e6);
+
+        vm.prank(alice);
+        vm.expectRevert(Launchpad.NotCancelled.selector);
+        launchpad.withdrawCommitment(proposalId);
+    }
+
+    function test_cancelledMarketKey_allowsReproposal() public {
+        bytes32 fakeRoot = keccak256("strict root");
+        launchpad.setNamesMerkleRoot(Launchpad.Gender.GIRL, fakeRoot);
+
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 5e6;
+        amounts[1] = 5e6;
+        bytes32[] memory emptyProof = new bytes32[](0);
+
+        vm.prank(alice);
+        bytes32 proposalId1 = launchpad.propose("Reverie", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        launchpad.cancelProposal(proposalId1);
+
+        // Re-propose same name after cancel — should succeed
+        vm.warp(block.timestamp + 1); // advance time so proposalId is different
+        launchpad.approveName("Reverie", Launchpad.Gender.GIRL);
+        vm.prank(alice);
+        bytes32 proposalId2 = launchpad.propose("Reverie", 2025, Launchpad.Gender.GIRL, emptyProof, amounts);
+        assertTrue(proposalId2 != bytes32(0));
+        assertFalse(launchpad.getProposal(proposalId2).requiresApproval);
     }
 }

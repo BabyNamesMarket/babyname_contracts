@@ -11,9 +11,9 @@
   "stage": "live",
   "goldsky": {
     "projectId": "project_cmnfucw0yiuar01y0347j7weu",
-    "subgraph": "babynames-market-base-sepolia/1.0.0",
+    "subgraph": "babynames-market-live-base-sepolia/1.0.0",
     "chain": "base-sepolia",
-    "endpoint": "https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/babynames-market-base-sepolia/1.0.0/gn",
+    "endpoint": "https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/babynames-market-live-base-sepolia/1.0.0/gn",
     "startBlock": 40159038,
     "abis": {
       "PredictionMarket": "./abi/PredictionMarket.json",

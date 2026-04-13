@@ -73,12 +73,19 @@ function main() {
     getBlockNumber(launchpadCreateTx, rpcUrl)
   ) - 1;
 
+  // Goldsky auto-appends the chain name, so the deployed slugs are:
+  //   commit: babynames-market-base-sepolia/1.0.0
+  //   live:   babynames-market-live-base-sepolia/1.0.0
+  const subgraphPrefix = STAGE === "commit" ? "babynames-market" : `babynames-market-${STAGE}`;
+  const subgraphName = `${subgraphPrefix}-base-sepolia`;
+  const subgraphSlug = `${subgraphName}/1.0.0`;
+
   deployment.goldsky = {
     projectId: "project_cmnfucw0yiuar01y0347j7weu",
-    subgraph: "babynames-market-base-sepolia/1.0.0",
+    subgraph: subgraphSlug,
     chain: "base-sepolia",
     endpoint:
-      "https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/babynames-market-base-sepolia/1.0.0/gn",
+      `https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/${subgraphSlug}/gn`,
     startBlock,
     abis: {
       PredictionMarket: "./abi/PredictionMarket.json",

@@ -69,10 +69,10 @@ contract DeployTestnet is Script {
         //    - defaultDeadlineDuration = 7 days
         Launchpad vault = new Launchpad(
             address(pm),
-            deployer,       // surplusRecipient
-            deployer,       // defaultOracle
-            7 days,         // defaultDeadlineDuration
-            deployer        // owner
+            deployer, // surplusRecipient
+            deployer, // defaultOracle
+            7 days, // defaultDeadlineDuration
+            deployer // owner
         );
         console.log("Launchpad:", address(vault));
 
@@ -82,7 +82,8 @@ contract DeployTestnet is Script {
         // 5. Finalize testnet defaults.
         vault.seedDefaultRegions();
         vault.openYear(2025);
-        vault.setYearLaunchDate(2025, block.timestamp + 7 days);
+        vault.setYearLaunchDate(2025, 1);
+        vault.setPostBatchTimeout(0);
         console.log("Default regions seeded, year 2025 opened");
 
         // 6. Set names merkle roots from generated all-time gender-split data
@@ -98,15 +99,24 @@ contract DeployTestnet is Script {
         // Write deployment artifact
         string memory chainIdStr = vm.toString(block.chainid);
         string memory json = string.concat(
-            '{"PredictionMarket":"', vm.toString(address(pm)),
-            '","Launchpad":"', vm.toString(address(vault)),
-            '","TestUSDC":"', vm.toString(collateralToken),
-            '","CollateralToken":"', vm.toString(collateralToken),
-            '","OutcomeTokenImpl":"', vm.toString(pm.outcomeTokenImplementation()),
-            '","chainId":', chainIdStr,
-            ',"deployer":"', vm.toString(deployer),
-            '","oracle":"', vm.toString(deployer),
-            '","surplusRecipient":"', vm.toString(deployer),
+            '{"PredictionMarket":"',
+            vm.toString(address(pm)),
+            '","Launchpad":"',
+            vm.toString(address(vault)),
+            '","TestUSDC":"',
+            vm.toString(collateralToken),
+            '","CollateralToken":"',
+            vm.toString(collateralToken),
+            '","OutcomeTokenImpl":"',
+            vm.toString(pm.outcomeTokenImplementation()),
+            '","chainId":',
+            chainIdStr,
+            ',"deployer":"',
+            vm.toString(deployer),
+            '","oracle":"',
+            vm.toString(deployer),
+            '","surplusRecipient":"',
+            vm.toString(deployer),
             '"}'
         );
         string memory path = string.concat("deployments/", chainIdStr, ".json");

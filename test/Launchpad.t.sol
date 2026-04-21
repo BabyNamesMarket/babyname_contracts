@@ -9,10 +9,21 @@ import {Launchpad} from "../src/Launchpad.sol";
 import {PredictionMarket} from "../src/PredictionMarket.sol";
 
 contract TestUSDC is ERC20 {
-    function name() public pure override returns (string memory) { return "Test USDC"; }
-    function symbol() public pure override returns (string memory) { return "tUSDC"; }
-    function decimals() public pure override returns (uint8) { return 6; }
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+    function name() public pure override returns (string memory) {
+        return "Test USDC";
+    }
+
+    function symbol() public pure override returns (string memory) {
+        return "tUSDC";
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract LaunchpadTest is Test {
@@ -38,16 +49,17 @@ contract LaunchpadTest is Test {
 
         launchpad = new Launchpad(
             address(pm),
-            treasury,         // surplusRecipient
-            oracle,           // defaultOracle
-            7 days,           // defaultDeadlineDuration
-            address(this)     // owner
+            treasury, // surplusRecipient
+            oracle, // defaultOracle
+            7 days, // defaultDeadlineDuration
+            address(this) // owner
         );
 
         pm.grantMarketCreatorRole(address(launchpad));
 
         launchpad.seedDefaultRegions();
         launchpad.openYear(2025);
+        launchpad.setPostBatchTimeout(24 hours);
 
         // Fund users
         usdc.mint(alice, 10_000e6);
@@ -86,6 +98,36 @@ contract LaunchpadTest is Test {
     }
 
     // ========== 1. PROPOSE ==========
+
+    function test_zeroDelay_proposeLaunchesMarketImmediately() public {
+        launchpad.setPostBatchTimeout(0);
+
+        uint256 treasuryBefore = usdc.balanceOf(treasury);
+        bytes32 proposalId = _proposeAsAlice("Nova", 2025, 100e6, 100e6);
+
+        Launchpad.ProposalInfo memory info = launchpad.getProposal(proposalId);
+        assertEq(uint256(info.state), uint256(Launchpad.ProposalState.LAUNCHED));
+        assertTrue(info.marketId != bytes32(0));
+        assertEq(info.totalFeesCollected, 10e6);
+        assertEq(usdc.balanceOf(treasury) - treasuryBefore, 0, "first 5% fee funds phantom shares");
+
+        PredictionMarket.MarketInfo memory mInfo = pm.getMarketInfo(info.marketId);
+        uint256 expectedS = (uint256(10e6) * 1e6) / 70000;
+        assertEq(mInfo.initialSharesPerOutcome, expectedS);
+
+        usdc.mint(bob, 100e6);
+        vm.prank(bob);
+        usdc.approve(address(launchpad), type(uint256).max);
+
+        int256[] memory delta = new int256[](2);
+        delta[0] = 5e6;
+
+        treasuryBefore = usdc.balanceOf(treasury);
+        vm.prank(bob);
+        launchpad.buy(proposalId, delta, 50e6, block.timestamp);
+
+        assertTrue(usdc.balanceOf(treasury) > treasuryBefore, "live buy should pay normal trading fee");
+    }
 
     function test_propose_createsProposalAndCommits() public {
         uint256 aliceBefore = usdc.balanceOf(alice);
@@ -473,13 +515,7 @@ contract LaunchpadTest is Test {
         vm.prank(alice);
         vm.expectRevert();
         launchpad.adminPropose(
-            outcomeNames,
-            oracle,
-            abi.encode("test"),
-            Launchpad.Gender.GIRL,
-            2025,
-            "",
-            block.timestamp + 7 days
+            outcomeNames, oracle, abi.encode("test"), Launchpad.Gender.GIRL, 2025, "", block.timestamp + 7 days
         );
     }
 

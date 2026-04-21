@@ -8,10 +8,21 @@ import {Launchpad} from "../src/Launchpad.sol";
 import {PredictionMarket} from "../src/PredictionMarket.sol";
 
 contract TestUSDC2 is ERC20 {
-    function name() public pure override returns (string memory) { return "Test USDC"; }
-    function symbol() public pure override returns (string memory) { return "tUSDC"; }
-    function decimals() public pure override returns (uint8) { return 6; }
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+    function name() public pure override returns (string memory) {
+        return "Test USDC";
+    }
+
+    function symbol() public pure override returns (string memory) {
+        return "tUSDC";
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 contract LaunchpadEdgeTest is Test {
@@ -37,16 +48,17 @@ contract LaunchpadEdgeTest is Test {
 
         launchpad = new Launchpad(
             address(pm),
-            treasury,         // surplusRecipient
-            oracle,           // defaultOracle
-            7 days,           // defaultDeadlineDuration
-            address(this)     // owner
+            treasury, // surplusRecipient
+            oracle, // defaultOracle
+            7 days, // defaultDeadlineDuration
+            address(this) // owner
         );
 
         pm.grantMarketCreatorRole(address(launchpad));
 
         launchpad.seedDefaultRegions();
         launchpad.openYear(2025);
+        launchpad.setPostBatchTimeout(24 hours);
 
         // Fund users
         usdc.mint(alice, 100_000e6);
@@ -292,11 +304,9 @@ contract LaunchpadEdgeTest is Test {
         vm.prank(charlie);
         launchpad.claimShares(proposalId);
 
-        uint256 sumYes = IERC20(mInfo.outcomeTokens[0]).balanceOf(alice)
-            + IERC20(mInfo.outcomeTokens[0]).balanceOf(bob)
+        uint256 sumYes = IERC20(mInfo.outcomeTokens[0]).balanceOf(alice) + IERC20(mInfo.outcomeTokens[0]).balanceOf(bob)
             + IERC20(mInfo.outcomeTokens[0]).balanceOf(charlie);
-        uint256 sumNo = IERC20(mInfo.outcomeTokens[1]).balanceOf(alice)
-            + IERC20(mInfo.outcomeTokens[1]).balanceOf(bob)
+        uint256 sumNo = IERC20(mInfo.outcomeTokens[1]).balanceOf(alice) + IERC20(mInfo.outcomeTokens[1]).balanceOf(bob)
             + IERC20(mInfo.outcomeTokens[1]).balanceOf(charlie);
 
         assertLe(sumYes, launchpadYesBefore, "YES: sum of claimed > launchpad balance");

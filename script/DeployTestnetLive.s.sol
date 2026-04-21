@@ -13,11 +13,9 @@ import {DeployTestnet, TestUSDC} from "./DeployTestnet.s.sol";
 
 /**
  * @notice Deploys the full stack, proposes seed names with commits, and writes
- *         the deployment artifact. A post-deploy bash step (in deploy-base-sepolia.sh)
- *         sets the launch date to the past and calls launchMarket with actual
- *         on-chain proposalIds, because forge broadcasts each tx in a different
- *         block (different block.timestamp), making proposalIds computed in
- *         the script VM diverge from the on-chain ones.
+ *         the deployment artifact. Markets launch immediately from the seed
+ *         proposal transactions because the launch date is in the past and the
+ *         post-batch timeout is zero.
  */
 contract DeployTestnetLive is DeployTestnet {
     using stdJson for string;
@@ -59,21 +57,15 @@ contract DeployTestnetLive is DeployTestnet {
         pm.setMarketCreationFee(5e6);
         console.log("PredictionMarket:", address(pm));
 
-        Launchpad vault = new Launchpad(
-            address(pm),
-            deployer,
-            deployer,
-            7 days,
-            deployer
-        );
+        Launchpad vault = new Launchpad(address(pm), deployer, deployer, 7 days, deployer);
         console.log("Launchpad:", address(vault));
 
         pm.grantMarketCreatorRole(address(vault));
 
         vault.seedDefaultRegions();
         vault.openYear(2025);
-        // Set launch date in the future so proposals enter the commit phase
-        vault.setYearLaunchDate(2025, block.timestamp + 7 days);
+        vault.setYearLaunchDate(2025, 1);
+        vault.setPostBatchTimeout(0);
         console.log("Default regions seeded, year 2025 opened");
 
         // Set merkle roots
@@ -84,7 +76,7 @@ contract DeployTestnetLive is DeployTestnet {
         vault.setNamesMerkleRoot(Launchpad.Gender.GIRL, girlsRoot);
         console.log("Names merkle roots set");
 
-        // --- Seed proposals during commit phase ---
+        // --- Seed proposals; each one launches immediately ---
 
         SeedName[] memory seeds = _loadSeeds(rootsJson);
 
@@ -98,18 +90,9 @@ contract DeployTestnetLive is DeployTestnet {
             amounts[0] = commitPerSide;
             amounts[1] = commitPerSide;
 
-            vault.propose(
-                seeds[i].name,
-                2025,
-                seeds[i].gender,
-                seeds[i].proof,
-                amounts
-            );
+            vault.propose(seeds[i].name, 2025, seeds[i].gender, seeds[i].proof, amounts);
             console.log("Proposed:", seeds[i].name);
         }
-
-        // NOTE: launchMarket is called post-deploy via cast because proposalIds
-        // depend on block.timestamp which differs per broadcast transaction.
 
         vm.stopBroadcast();
 
@@ -123,38 +106,34 @@ contract DeployTestnetLive is DeployTestnet {
 
         // Liam (boy)
         bytes32[] memory boysProof = rootsJson.readBytes32Array(".boys.sampleProof");
-        seeds[0] = SeedName({
-            name: "liam",
-            gender: Launchpad.Gender.BOY,
-            proof: boysProof
-        });
+        seeds[0] = SeedName({name: "liam", gender: Launchpad.Gender.BOY, proof: boysProof});
 
         // Olivia (girl)
         bytes32[] memory girlsProof = rootsJson.readBytes32Array(".girls.sampleProof");
-        seeds[1] = SeedName({
-            name: "olivia",
-            gender: Launchpad.Gender.GIRL,
-            proof: girlsProof
-        });
+        seeds[1] = SeedName({name: "olivia", gender: Launchpad.Gender.GIRL, proof: girlsProof});
     }
 
-    function _writeArtifact(
-        address pm,
-        address vault,
-        address collateralToken,
-        address deployer
-    ) internal {
+    function _writeArtifact(address pm, address vault, address collateralToken, address deployer) internal {
         string memory chainIdStr = vm.toString(block.chainid);
         string memory json = string.concat(
-            '{"PredictionMarket":"', vm.toString(pm),
-            '","Launchpad":"', vm.toString(vault),
-            '","TestUSDC":"', vm.toString(collateralToken),
-            '","CollateralToken":"', vm.toString(collateralToken),
-            '","OutcomeTokenImpl":"', vm.toString(PredictionMarket(pm).outcomeTokenImplementation()),
-            '","chainId":', chainIdStr,
-            ',"deployer":"', vm.toString(deployer),
-            '","oracle":"', vm.toString(deployer),
-            '","surplusRecipient":"', vm.toString(deployer),
+            '{"PredictionMarket":"',
+            vm.toString(pm),
+            '","Launchpad":"',
+            vm.toString(vault),
+            '","TestUSDC":"',
+            vm.toString(collateralToken),
+            '","CollateralToken":"',
+            vm.toString(collateralToken),
+            '","OutcomeTokenImpl":"',
+            vm.toString(PredictionMarket(pm).outcomeTokenImplementation()),
+            '","chainId":',
+            chainIdStr,
+            ',"deployer":"',
+            vm.toString(deployer),
+            '","oracle":"',
+            vm.toString(deployer),
+            '","surplusRecipient":"',
+            vm.toString(deployer),
             '","stage":"live"}'
         );
         string memory path = string.concat("deployments/", chainIdStr, "-live.json");

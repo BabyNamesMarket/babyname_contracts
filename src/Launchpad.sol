@@ -90,7 +90,7 @@ contract Launchpad is OwnableRoles {
     // ========== LAUNCH TRIGGERS ==========
 
     /// @notice For post-batch proposals: time after proposal creation when it auto-qualifies for launch
-    uint256 public postBatchTimeout = 24 hours;
+    uint256 public postBatchTimeout;
     uint256 public postBatchMinThreshold = 10e6;
 
     // ========== PROPOSAL STATE ==========
@@ -136,8 +136,8 @@ contract Launchpad is OwnableRoles {
         uint256 createdAt;
         ProposalState state;
         bytes32 marketId;
-        uint256[] totalPerOutcome;  // NET per outcome (after fee)
-        uint256 totalCommitted;     // GROSS total committed
+        uint256[] totalPerOutcome; // NET per outcome (after fee)
+        uint256 totalCommitted; // GROSS total committed
         uint256 totalFeesCollected; // fees separated at commit time
         address[] committers;
         string name;
@@ -146,8 +146,8 @@ contract Launchpad is OwnableRoles {
         uint256 actualCost;
         uint256 tradingBudget;
         uint256[] totalSharesPerOutcome;
-        mapping(address => uint256[]) committed;      // NET per user per outcome
-        mapping(address => uint256) committedGross;    // GROSS per user (for full refund)
+        mapping(address => uint256[]) committed; // NET per user per outcome
+        mapping(address => uint256) committedGross; // GROSS per user (for full refund)
         mapping(address => bool) hasCommitted;
         mapping(address => bool) claimed;
         bool requiresApproval;
@@ -215,11 +215,7 @@ contract Launchpad is OwnableRoles {
     event PostBatchTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
     event ProposalApproved(bytes32 indexed proposalId);
     event ProxyBuy(
-        bytes32 indexed proposalId,
-        bytes32 indexed marketId,
-        address indexed trader,
-        int256 costDelta,
-        uint256 fee
+        bytes32 indexed proposalId, bytes32 indexed marketId, address indexed trader, int256 costDelta, uint256 fee
     );
     event ProxyTradingFeeBpsUpdated(uint256 oldBps, uint256 newBps);
 
@@ -498,10 +494,7 @@ contract Launchpad is OwnableRoles {
         Gender gender,
         bytes32[] calldata proof,
         uint256[] calldata amounts
-    )
-        external
-        returns (bytes32)
-    {
+    ) external returns (bytes32) {
         return _propose(name, year, gender, "", proof, amounts);
     }
 
@@ -513,15 +506,16 @@ contract Launchpad is OwnableRoles {
         uint256[] calldata amounts,
         PermitArgs calldata permitData
     ) external returns (bytes32) {
-        IERC20Permit(address(usdc)).permit(
-            msg.sender,
-            address(this),
-            permitData.value,
-            permitData.deadline,
-            permitData.v,
-            permitData.r,
-            permitData.s
-        );
+        IERC20Permit(address(usdc))
+            .permit(
+                msg.sender,
+                address(this),
+                permitData.value,
+                permitData.deadline,
+                permitData.v,
+                permitData.r,
+                permitData.s
+            );
         return _propose(name, year, gender, "", proof, amounts);
     }
 
@@ -563,30 +557,24 @@ contract Launchpad is OwnableRoles {
         if (marketKeyToProposal[marketKey] != bytes32(0)) {
             bytes32 existingId = marketKeyToProposal[marketKey];
             ProposalStorage storage existing = proposals[existingId];
-            if (
-                existing.state == ProposalState.OPEN || existing.state == ProposalState.LAUNCHED
-            ) {
+            if (existing.state == ProposalState.OPEN || existing.state == ProposalState.LAUNCHED) {
                 revert DuplicateMarketKey();
             }
         }
 
         // questionId: launchpad address (20 bytes) + hash(name, gender, year, region) truncated (12 bytes)
-        bytes32 questionId = bytes32(
-            (uint256(uint160(address(this))) << 96) | uint256(uint96(bytes12(marketKey)))
-        );
+        bytes32 questionId = bytes32((uint256(uint160(address(this))) << 96) | uint256(uint96(bytes12(marketKey))));
         if (questionIdToProposal[questionId] != bytes32(0)) revert DuplicateQuestionId();
 
-        bytes32 proposalId =
-            keccak256(abi.encodePacked(address(this), block.chainid, questionId, block.timestamp));
+        bytes32 proposalId = keccak256(abi.encodePacked(address(this), block.chainid, questionId, block.timestamp));
         if (proposals[proposalId].createdAt != 0) revert ProposalExists();
 
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
 
-        uint256 launchTs = yearLaunchDate[year] > block.timestamp
-            ? yearLaunchDate[year]
-            : block.timestamp + postBatchTimeout;
+        uint256 launchTs =
+            yearLaunchDate[year] > block.timestamp ? yearLaunchDate[year] : block.timestamp + postBatchTimeout;
 
         ProposalStorage storage prop = proposals[proposalId];
         prop.questionId = questionId;
@@ -606,12 +594,13 @@ contract Launchpad is OwnableRoles {
         marketKeyToProposal[marketKey] = proposalId;
         questionIdToProposal[questionId] = proposalId;
 
-        emit ProposalCreated(
-            proposalId, questionId, lowered, gender, year, upperRegion, msg.sender, launchTs
-        );
+        emit ProposalCreated(proposalId, questionId, lowered, gender, year, upperRegion, msg.sender, launchTs);
 
         if (amounts.length != 2) revert InvalidAmounts();
         _commit(proposalId, amounts);
+        if (!prop.requiresApproval && block.timestamp >= _launchTimestamp(prop)) {
+            _launchCore(proposalId);
+        }
 
         return proposalId;
     }
@@ -637,19 +626,14 @@ contract Launchpad is OwnableRoles {
 
         uint256 _launchTs = launchTs > 0
             ? launchTs
-            : (yearLaunchDate[year] > block.timestamp)
-                ? yearLaunchDate[year]
-                : block.timestamp + postBatchTimeout;
+            : (yearLaunchDate[year] > block.timestamp) ? yearLaunchDate[year] : block.timestamp + postBatchTimeout;
         if (_launchTs <= block.timestamp) revert InvalidDeadline();
 
         bytes32 metaHash = keccak256(abi.encode(metadata, gender, year, region));
-        bytes32 questionId = bytes32(
-            (uint256(uint160(address(this))) << 96) | uint256(uint96(bytes12(metaHash)))
-        );
+        bytes32 questionId = bytes32((uint256(uint160(address(this))) << 96) | uint256(uint96(bytes12(metaHash))));
         if (questionIdToProposal[questionId] != bytes32(0)) revert DuplicateQuestionId();
 
-        bytes32 proposalId =
-            keccak256(abi.encodePacked(address(this), block.chainid, questionId, block.timestamp));
+        bytes32 proposalId = keccak256(abi.encodePacked(address(this), block.chainid, questionId, block.timestamp));
         if (proposals[proposalId].createdAt != 0) revert ProposalExists();
 
         ProposalStorage storage prop = proposals[proposalId];
@@ -683,18 +667,17 @@ contract Launchpad is OwnableRoles {
         _commit(proposalId, amounts);
     }
 
-    function commitWithPermit(bytes32 proposalId, uint256[] calldata amounts, PermitArgs calldata permitData)
-        external
-    {
-        IERC20Permit(address(usdc)).permit(
-            msg.sender,
-            address(this),
-            permitData.value,
-            permitData.deadline,
-            permitData.v,
-            permitData.r,
-            permitData.s
-        );
+    function commitWithPermit(bytes32 proposalId, uint256[] calldata amounts, PermitArgs calldata permitData) external {
+        IERC20Permit(address(usdc))
+            .permit(
+                msg.sender,
+                address(this),
+                permitData.value,
+                permitData.deadline,
+                permitData.v,
+                permitData.r,
+                permitData.s
+            );
         ProposalStorage storage prop = proposals[proposalId];
         if (prop.state != ProposalState.OPEN) revert NotOpen();
         if (block.timestamp >= _launchTimestamp(prop)) revert DeadlinePassed();
@@ -885,9 +868,8 @@ contract Launchpad is OwnableRoles {
             uint256 userCommitted = prop.committed[msg.sender][i];
             userTotal += userCommitted;
             if (userCommitted == 0 || prop.totalPerOutcome[i] == 0 || prop.totalSharesPerOutcome[i] == 0) continue;
-            userShares[i] = FixedPointMathLib.mulDiv(
-                prop.totalSharesPerOutcome[i], userCommitted, prop.totalPerOutcome[i]
-            );
+            userShares[i] =
+                FixedPointMathLib.mulDiv(prop.totalSharesPerOutcome[i], userCommitted, prop.totalPerOutcome[i]);
         }
 
         for (uint256 i; i < n; i++) {
@@ -922,12 +904,10 @@ contract Launchpad is OwnableRoles {
      * @param maxCost Maximum USDC to spend (including proxy fee)
      * @param deadline Block timestamp deadline for the trade
      */
-    function buy(
-        bytes32 proposalId,
-        int256[] calldata deltaShares,
-        uint256 maxCost,
-        uint256 deadline
-    ) external returns (int256) {
+    function buy(bytes32 proposalId, int256[] calldata deltaShares, uint256 maxCost, uint256 deadline)
+        external
+        returns (int256)
+    {
         if (_locked != 0) revert Reentrancy();
         _locked = 1;
 

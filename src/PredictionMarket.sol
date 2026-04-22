@@ -564,6 +564,11 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
         MarketInfo storage m = _markets[marketId];
         sharesBought = OutcomeToken(m.outcomeTokens[outcomeIndex]).balanceOf(msg.sender);
         if (sharesBought < minSharesOut) revert InsufficientOutputAmount();
+
+        int256[] memory deltaShares = new int256[](m.outcomeQs.length);
+        deltaShares[outcomeIndex] = int256(sharesBought);
+        emit MarketTraded(marketId, msg.sender, m.alpha, int256(grossAmount), 0, deltaShares, m.outcomeQs);
+
         return (marketId, sharesBought);
     }
 

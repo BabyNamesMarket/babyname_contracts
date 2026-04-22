@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -428,9 +429,11 @@ contract PredictionMarketTest is Test {
         bytes32[] memory proof = new bytes32[](0);
         uint256 balanceBefore = usdc.balanceOf(address(this));
 
+        vm.recordLogs();
         (bytes32 marketId, uint256 sharesBought) = pm.buyOrCreateExactIn(
             "unifiedbuy", 2025, PredictionMarket.Gender.GIRL, "", proof, 0, 100e6, 1, block.timestamp + 1
         );
+        Vm.Log[] memory entries = vm.getRecordedLogs();
 
         assertTrue(pm.marketExists(marketId), "market should exist");
 
@@ -439,6 +442,42 @@ contract PredictionMarketTest is Test {
 
         assertEq(sharesBought, tokenBalance, "returned shares should match minted YES balance");
         assertEq(balanceBefore - usdc.balanceOf(address(this)), 100e6, "creation path should charge exact gross amount");
+
+        bytes32 marketCreatedSig =
+            keccak256("MarketCreated(bytes32,address,bytes32,address,address,bytes,uint256,uint256,address[],string[],uint256[])");
+        bytes32 nameMarketCreatedSig =
+            keccak256("NameMarketCreated(bytes32,bytes32,string,uint8,uint16,string,address,uint256)");
+        bytes32 marketTradedSig = keccak256("MarketTraded(bytes32,address,uint256,int256,uint256,int256[],uint256[])");
+
+        uint256 marketCreatedIndex = type(uint256).max;
+        uint256 nameMarketCreatedIndex = type(uint256).max;
+        uint256 marketTradedIndex = type(uint256).max;
+
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].topics[0] == marketCreatedSig) marketCreatedIndex = i;
+            if (entries[i].topics[0] == nameMarketCreatedSig) nameMarketCreatedIndex = i;
+            if (entries[i].topics[0] == marketTradedSig) marketTradedIndex = i;
+        }
+
+        assertLt(marketCreatedIndex, nameMarketCreatedIndex, "MarketCreated should precede NameMarketCreated");
+        assertLt(nameMarketCreatedIndex, marketTradedIndex, "initial buy MarketTraded should be last");
+
+        Vm.Log memory tradedLog = entries[marketTradedIndex];
+        assertEq(tradedLog.topics[1], marketId, "trade event marketId");
+        assertEq(address(uint160(uint256(tradedLog.topics[2]))), address(this), "trade event trader");
+
+        (uint256 alpha, int256 usdcFlow, uint256 fee, int256[] memory deltaShares, uint256[] memory outcomeQs) =
+            abi.decode(tradedLog.data, (uint256, int256, uint256, int256[], uint256[]));
+
+        assertEq(alpha, info.alpha, "trade event alpha");
+        assertEq(usdcFlow, int256(100e6), "trade event flow matches gross input");
+        assertEq(fee, 0, "creation path charges no trading fee");
+        assertEq(deltaShares.length, 2, "trade delta length");
+        assertEq(deltaShares[0], int256(sharesBought), "trade delta on bought outcome");
+        assertEq(deltaShares[1], 0, "trade delta on untouched outcome");
+        assertEq(outcomeQs.length, info.outcomeQs.length, "trade q length");
+        assertEq(outcomeQs[0], info.outcomeQs[0], "trade q[0]");
+        assertEq(outcomeQs[1], info.outcomeQs[1], "trade q[1]");
     }
 
     function test_buyOrCreateExactIn_buysExistingMarket() public {
@@ -451,9 +490,11 @@ contract PredictionMarketTest is Test {
         uint256 tokenBalanceBefore = OutcomeToken(infoBefore.outcomeTokens[0]).balanceOf(address(this));
         (uint256 quotedShares,,,) = pm.quoteBuyExactIn(marketId, 0, 25e6);
 
+        vm.recordLogs();
         (bytes32 returnedMarketId, uint256 sharesBought) = pm.buyOrCreateExactIn(
             "existingbuy", 2025, PredictionMarket.Gender.GIRL, "", proof, 0, 25e6, quotedShares, block.timestamp + 1
         );
+        Vm.Log[] memory entries = vm.getRecordedLogs();
 
         assertEq(returnedMarketId, marketId, "should target existing market");
         assertEq(sharesBought, quotedShares, "existing-market branch should match quote");
@@ -461,6 +502,13 @@ contract PredictionMarketTest is Test {
         PredictionMarket.MarketInfo memory infoAfter = pm.getMarketInfo(marketId);
         uint256 tokenBalanceAfter = OutcomeToken(infoAfter.outcomeTokens[0]).balanceOf(address(this));
         assertEq(tokenBalanceAfter - tokenBalanceBefore, quotedShares, "should mint quoted shares on existing market");
+
+        bytes32 marketTradedSig = keccak256("MarketTraded(bytes32,address,uint256,int256,uint256,int256[],uint256[])");
+        uint256 tradedCount;
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].topics[0] == marketTradedSig) tradedCount++;
+        }
+        assertEq(tradedCount, 1, "existing-market branch should emit one MarketTraded");
     }
 
     // ========== 5. RESOLUTION ==========

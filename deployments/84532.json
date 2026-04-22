@@ -1,10 +1,10 @@
 {
-  "PredictionMarket": "0xDdcC24484893361Dc32fa06163ED9fd14b9F8440",
-  "PredictionMarketImpl": "0xb29Ad0317D47F6067C976928D6b917597D920CE5",
-  "TestUSDC": "0x9dF7cB0b93D83823E7BC4f5B8110F92b7228b2AF",
-  "CollateralToken": "0x9dF7cB0b93D83823E7BC4f5B8110F92b7228b2AF",
-  "OutcomeTokenImpl": "0x246F997F21e161A2C631698C3Db5Ac8449F88d71",
-  "Validation": "0x03f127D3D26Bf670A72B2E7B7547F20ba69FfBEa",
+  "PredictionMarket": "0x4BbB005109D5B8941D06399e88FfFAEA5E9CF7f2",
+  "PredictionMarketImpl": "0x9Ea30b8Aa7E43371FDbb189665FD4A1caDa720c8",
+  "TestUSDC": "0xb1cCFfce4fF971c30659d6130246b01FEccE5eBE",
+  "CollateralToken": "0xb1cCFfce4fF971c30659d6130246b01FEccE5eBE",
+  "OutcomeTokenImpl": "0x83E29854303F62E07376d58A95bfD18578E0997e",
+  "Validation": "0x31AB5c0ccE7cEC3a6cC1C77494689b7Cc09c6E88",
   "chainId": 84532,
   "deployer": "0x312e253d1C18b92112aD2276Ade650FE7E620D1a",
   "oracle": "0x312e253d1C18b92112aD2276Ade650FE7E620D1a",
@@ -14,15 +14,15 @@
     "subgraph": "babynames-market-base-sepolia/1.0.0",
     "chain": "base-sepolia",
     "endpoint": "https://api.goldsky.com/api/public/project_cmnfucw0yiuar01y0347j7weu/subgraphs/babynames-market-base-sepolia/1.0.0/gn",
-    "startBlock": 40541260,
+    "startBlock": 40544207,
     "abis": {
       "PredictionMarket": "./abi/PredictionMarket.json"
     },
     "instances": [
       {
         "abi": "PredictionMarket",
-        "address": "0xDdcC24484893361Dc32fa06163ED9fd14b9F8440",
-        "startBlock": 40541260,
+        "address": "0x4BbB005109D5B8941D06399e88FfFAEA5E9CF7f2",
+        "startBlock": 40544207,
         "chain": "base-sepolia"
       }
     ]

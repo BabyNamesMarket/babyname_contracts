@@ -37,3 +37,4 @@ fi
 
 node scripts/update-base-sepolia-metadata.js
 node scripts/verify-base-sepolia.js
+node scripts/publish-base-sepolia-goldsky.js

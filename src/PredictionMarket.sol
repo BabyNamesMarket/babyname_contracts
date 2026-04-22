@@ -268,7 +268,7 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
         Gender gender,
         string memory region,
         bytes32[] calldata proof,
-        uint256[] calldata initialBuyAmounts
+        uint256[] memory initialBuyAmounts
     ) internal returns (bytes32) {
         if (!validation.isValidName(name, uint8(gender), proof)) revert InvalidName();
         if (!yearOpen[year]) revert YearNotOpen();
@@ -506,7 +506,7 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
      *      Any leftover due to integer rounding is simply not charged.
      */
     function buyExactIn(bytes32 marketId, uint256 outcomeIndex, uint256 grossAmount, uint256 minSharesOut, uint256 deadline)
-        external
+        public
         returns (uint256 sharesBought)
     {
         if (!marketExists(marketId)) revert MarketDoesNotExist();
@@ -533,6 +533,38 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
         if (!usdc.transferFrom(msg.sender, address(this), lmsrCost + fee)) revert UsdcTransferFailed();
 
         emit MarketTraded(marketId, msg.sender, m.alpha, int256(lmsrCost + fee), fee, deltaShares, m.outcomeQs);
+    }
+
+    function buyOrCreateExactIn(
+        string calldata name,
+        uint16 year,
+        Gender gender,
+        string calldata region,
+        bytes32[] calldata proof,
+        uint256 outcomeIndex,
+        uint256 grossAmount,
+        uint256 minSharesOut,
+        uint256 deadline
+    ) external returns (bytes32 marketId, uint256 sharesBought) {
+        if (outcomeIndex >= 2) revert InvalidOutcomeIndex();
+
+        string memory upperRegion = bytes(region).length > 0 ? _toUpperCase(region) : region;
+        bytes32 marketKey = keccak256(abi.encode(name, gender, year, upperRegion));
+        marketId = marketKeyToMarketId[marketKey];
+
+        if (marketId != bytes32(0)) {
+            sharesBought = buyExactIn(marketId, outcomeIndex, grossAmount, minSharesOut, deadline);
+            return (marketId, sharesBought);
+        }
+
+        uint256[] memory initialBuyAmounts = new uint256[](2);
+        initialBuyAmounts[outcomeIndex] = grossAmount;
+        marketId = _createNameMarket(name, year, gender, upperRegion, proof, initialBuyAmounts);
+
+        MarketInfo storage m = _markets[marketId];
+        sharesBought = OutcomeToken(m.outcomeTokens[outcomeIndex]).balanceOf(msg.sender);
+        if (sharesBought < minSharesOut) revert InsufficientOutputAmount();
+        return (marketId, sharesBought);
     }
 
     /**
@@ -826,16 +858,6 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
         emit MarketPausedUpdated(marketId, false);
     }
 
-    // ========== NAME VALIDATION ==========
-
-    function isValidName(string memory name, Gender gender, bytes32[] calldata proof) public view returns (bool) {
-        return validation.isValidName(name, uint8(gender), proof);
-    }
-
-    function isValidRegion(string memory region) public view returns (bool) {
-        return validation.isValidRegion(region);
-    }
-
     // ========== ADMIN ==========
 
     function setTargetVig(uint256 newTargetVig) external onlyRoles(PROTOCOL_MANAGER_ROLE) {
@@ -970,26 +992,6 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
 
     function marketExists(bytes32 marketId) public view returns (bool) {
         return _markets[marketId].outcomeTokens.length > 0;
-    }
-
-    function namesMerkleRoot(uint8 gender) external view returns (bytes32) {
-        return validation.namesMerkleRoot(gender);
-    }
-
-    function approvedNames(bytes32 key) external view returns (bool) {
-        return validation.approvedNames(key);
-    }
-
-    function proposedNames(bytes32 key) external view returns (bool) {
-        return validation.proposedNames(key);
-    }
-
-    function validRegions(bytes32 key) external view returns (bool) {
-        return validation.validRegions(key);
-    }
-
-    function defaultRegionsSeeded() external view returns (bool) {
-        return validation.defaultRegionsSeeded();
     }
 
     // ========== INTERNAL HELPERS ==========

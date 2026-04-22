@@ -87,6 +87,10 @@ contract PredictionMarketTest is Test {
         return string(out);
     }
 
+    function _validation() internal view returns (MarketValidation) {
+        return pm.validation();
+    }
+
     // ========== 1. MARKET CREATION ==========
 
     function test_createMarket_derivedShares() public {
@@ -418,6 +422,45 @@ contract PredictionMarketTest is Test {
         assertEq(balBefore - balAfter, totalCharge, "charged quoted total only");
         assertEq(surplusAfter - surplusBefore, quotedFee, "fee credited to surplus");
         assertLe(totalCharge, 100e6, "never charges more than requested gross input");
+    }
+
+    function test_buyOrCreateExactIn_createsMarketWhenMissing() public {
+        bytes32[] memory proof = new bytes32[](0);
+        uint256 balanceBefore = usdc.balanceOf(address(this));
+
+        (bytes32 marketId, uint256 sharesBought) = pm.buyOrCreateExactIn(
+            "unifiedbuy", 2025, PredictionMarket.Gender.GIRL, "", proof, 0, 100e6, 1, block.timestamp + 1
+        );
+
+        assertTrue(pm.marketExists(marketId), "market should exist");
+
+        PredictionMarket.MarketInfo memory info = pm.getMarketInfo(marketId);
+        uint256 tokenBalance = OutcomeToken(info.outcomeTokens[0]).balanceOf(address(this));
+
+        assertEq(sharesBought, tokenBalance, "returned shares should match minted YES balance");
+        assertEq(balanceBefore - usdc.balanceOf(address(this)), 100e6, "creation path should charge exact gross amount");
+    }
+
+    function test_buyOrCreateExactIn_buysExistingMarket() public {
+        bytes32[] memory proof = new bytes32[](0);
+        (bytes32 marketId,) = pm.buyOrCreateExactIn(
+            "existingbuy", 2025, PredictionMarket.Gender.GIRL, "", proof, 0, 100e6, 1, block.timestamp + 1
+        );
+
+        PredictionMarket.MarketInfo memory infoBefore = pm.getMarketInfo(marketId);
+        uint256 tokenBalanceBefore = OutcomeToken(infoBefore.outcomeTokens[0]).balanceOf(address(this));
+        (uint256 quotedShares,,,) = pm.quoteBuyExactIn(marketId, 0, 25e6);
+
+        (bytes32 returnedMarketId, uint256 sharesBought) = pm.buyOrCreateExactIn(
+            "existingbuy", 2025, PredictionMarket.Gender.GIRL, "", proof, 0, 25e6, quotedShares, block.timestamp + 1
+        );
+
+        assertEq(returnedMarketId, marketId, "should target existing market");
+        assertEq(sharesBought, quotedShares, "existing-market branch should match quote");
+
+        PredictionMarket.MarketInfo memory infoAfter = pm.getMarketInfo(marketId);
+        uint256 tokenBalanceAfter = OutcomeToken(infoAfter.outcomeTokens[0]).balanceOf(address(this));
+        assertEq(tokenBalanceAfter - tokenBalanceBefore, quotedShares, "should mint quoted shares on existing market");
     }
 
     // ========== 5. RESOLUTION ==========
@@ -841,13 +884,13 @@ contract PredictionMarketTest is Test {
     }
 
     function test_regionValidation_enforcesStateListAndRemoval() public {
-        assertTrue(pm.isValidRegion("CA"));
-        assertFalse(pm.isValidRegion("ZZ"));
+        assertTrue(_validation().isValidRegion("CA"));
+        assertFalse(_validation().isValidRegion("ZZ"));
 
         pm.removeRegion("CA");
-        assertFalse(pm.isValidRegion("CA"));
+        assertFalse(_validation().isValidRegion("CA"));
 
         pm.addRegion("CA");
-        assertTrue(pm.isValidRegion("CA"));
+        assertTrue(_validation().isValidRegion("CA"));
     }
 }

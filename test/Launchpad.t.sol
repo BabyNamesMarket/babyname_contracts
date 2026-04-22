@@ -82,6 +82,10 @@ contract NameMarketTest is Test {
         marketId = pm.createNameMarket(_name, year, PredictionMarket.Gender.GIRL, proof, amounts);
     }
 
+    function _validation() internal view returns (MarketValidation) {
+        return pm.validation();
+    }
+
     // ========== 1. CREATE MARKET ==========
 
     function test_createNameMarket_basic() public {
@@ -337,10 +341,10 @@ contract NameMarketTest is Test {
         pm.setNamesMerkleRoot(PredictionMarket.Gender.BOY, boysRoot);
         pm.setNamesMerkleRoot(PredictionMarket.Gender.GIRL, girlsRoot);
 
-        assertTrue(pm.isValidName(boyName, PredictionMarket.Gender.BOY, boyProof));
-        assertTrue(pm.isValidName(girlName, PredictionMarket.Gender.GIRL, girlProof));
-        assertFalse(pm.isValidName(girlName, PredictionMarket.Gender.BOY, girlProof));
-        assertFalse(pm.isValidName(boyName, PredictionMarket.Gender.GIRL, boyProof));
+        assertTrue(_validation().isValidName(boyName, uint8(PredictionMarket.Gender.BOY), boyProof));
+        assertTrue(_validation().isValidName(girlName, uint8(PredictionMarket.Gender.GIRL), girlProof));
+        assertFalse(_validation().isValidName(girlName, uint8(PredictionMarket.Gender.BOY), girlProof));
+        assertFalse(_validation().isValidName(boyName, uint8(PredictionMarket.Gender.GIRL), boyProof));
     }
 
     // ========== 5. ADMIN SETTERS ==========
@@ -494,7 +498,7 @@ contract NameMarketTest is Test {
     function test_proposeName_emitsEvent() public {
         vm.prank(alice);
         pm.proposeName("xanadu", PredictionMarket.Gender.GIRL);
-        assertTrue(pm.proposedNames(keccak256(abi.encode("xanadu", PredictionMarket.Gender.GIRL))));
+        assertTrue(_validation().proposedNames(keccak256(abi.encode("xanadu", PredictionMarket.Gender.GIRL))));
     }
 
     function test_proposeName_invalidCharactersReverts() public {

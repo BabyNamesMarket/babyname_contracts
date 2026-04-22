@@ -115,25 +115,6 @@
   },
   {
     "type": "function",
-    "name": "approvedNames",
-    "inputs": [
-      {
-        "name": "key",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "buyExactIn",
     "inputs": [
       {
@@ -163,6 +144,70 @@
       }
     ],
     "outputs": [
+      {
+        "name": "sharesBought",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "buyOrCreateExactIn",
+    "inputs": [
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "year",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "gender",
+        "type": "uint8",
+        "internalType": "enum PredictionMarket.Gender"
+      },
+      {
+        "name": "region",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "proof",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "outcomeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grossAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minSharesOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "marketId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
       {
         "name": "sharesBought",
         "type": "uint256",
@@ -428,19 +473,6 @@
   },
   {
     "type": "function",
-    "name": "defaultRegionsSeeded",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "defaultSurplusRecipient",
     "inputs": [],
     "outputs": [
@@ -656,54 +688,6 @@
   },
   {
     "type": "function",
-    "name": "isValidName",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "gender",
-        "type": "uint8",
-        "internalType": "enum PredictionMarket.Gender"
-      },
-      {
-        "name": "proof",
-        "type": "bytes32[]",
-        "internalType": "bytes32[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isValidRegion",
-    "inputs": [
-      {
-        "name": "region",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "marketExists",
     "inputs": [
       {
@@ -799,25 +783,6 @@
   },
   {
     "type": "function",
-    "name": "namesMerkleRoot",
-    "inputs": [
-      {
-        "name": "gender",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "openYear",
     "inputs": [
       {
@@ -904,25 +869,6 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "proposedNames",
-    "inputs": [
-      {
-        "name": "key",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1458,25 +1404,6 @@
         "name": "",
         "type": "address",
         "internalType": "contract IERC20"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "validRegions",
-    "inputs": [
-      {
-        "name": "key",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"

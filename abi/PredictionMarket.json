@@ -6,46 +6,7 @@
   },
   {
     "type": "function",
-    "name": "COST_ROUNDING_BUFFER",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DEFAULT_MARKET_CREATION_FEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "DEFAULT_TARGET_VIG",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "MARKET_CREATOR_ROLE",
     "inputs": [],
     "outputs": [
       {
@@ -136,19 +97,6 @@
   },
   {
     "type": "function",
-    "name": "allowAnyMarketCreator",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "approveName",
     "inputs": [
       {
@@ -170,7 +118,7 @@
     "name": "approvedNames",
     "inputs": [
       {
-        "name": "",
+        "name": "key",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -183,6 +131,45 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "buyExactIn",
+    "inputs": [
+      {
+        "name": "marketId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "outcomeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grossAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "minSharesOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "sharesBought",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -332,67 +319,6 @@
   },
   {
     "type": "function",
-    "name": "createMarket",
-    "inputs": [
-      {
-        "name": "params",
-        "type": "tuple",
-        "internalType": "struct PredictionMarket.CreateMarketParams",
-        "components": [
-          {
-            "name": "oracle",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "creationFeePerOutcome",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "initialBuyMaxCost",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "questionId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "surplusRecipient",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "metadata",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "initialBuyShares",
-            "type": "int256[]",
-            "internalType": "int256[]"
-          },
-          {
-            "name": "outcomeNames",
-            "type": "string[]",
-            "internalType": "string[]"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "createNameMarket",
     "inputs": [
       {
@@ -419,77 +345,6 @@
         "name": "initialBuyAmounts",
         "type": "uint256[]",
         "internalType": "uint256[]"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "createNameMarketWithPermit",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "year",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "gender",
-        "type": "uint8",
-        "internalType": "enum PredictionMarket.Gender"
-      },
-      {
-        "name": "proof",
-        "type": "bytes32[]",
-        "internalType": "bytes32[]"
-      },
-      {
-        "name": "initialBuyAmounts",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
-      },
-      {
-        "name": "permitData",
-        "type": "tuple",
-        "internalType": "struct PredictionMarket.PermitArgs",
-        "components": [
-          {
-            "name": "value",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "v",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "r",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "s",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
       }
     ],
     "outputs": [
@@ -599,40 +454,6 @@
   },
   {
     "type": "function",
-    "name": "getMarketIdByName",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "gender",
-        "type": "uint8",
-        "internalType": "enum PredictionMarket.Gender"
-      },
-      {
-        "name": "year",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "region",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getMarketInfo",
     "inputs": [
       {
@@ -714,40 +535,6 @@
   },
   {
     "type": "function",
-    "name": "getMarketKey",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "gender",
-        "type": "uint8",
-        "internalType": "enum PredictionMarket.Gender"
-      },
-      {
-        "name": "year",
-        "type": "uint16",
-        "internalType": "uint16"
-      },
-      {
-        "name": "region",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "pure"
-  },
-  {
-    "type": "function",
     "name": "getPrices",
     "inputs": [
       {
@@ -777,19 +564,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "grantMarketCreatorRole",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -865,6 +639,16 @@
         "name": "_usdc",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_validation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -914,19 +698,6 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "marketCreationFee",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -993,7 +764,7 @@
     "name": "marketTradingFeeBps",
     "inputs": [
       {
-        "name": "",
+        "name": "marketId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1009,7 +780,7 @@
   },
   {
     "type": "function",
-    "name": "markets",
+    "name": "marketTradingFeeOverrideSet",
     "inputs": [
       {
         "name": "",
@@ -1019,49 +790,9 @@
     ],
     "outputs": [
       {
-        "name": "oracle",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "resolved",
+        "name": "",
         "type": "bool",
         "internalType": "bool"
-      },
-      {
-        "name": "paused",
-        "type": "bool",
-        "internalType": "bool"
-      },
-      {
-        "name": "alpha",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "totalUsdcIn",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "creator",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "questionId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "surplusRecipient",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "initialSharesPerOutcome",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1071,7 +802,7 @@
     "name": "namesMerkleRoot",
     "inputs": [
       {
-        "name": "",
+        "name": "gender",
         "type": "uint8",
         "internalType": "uint8"
       }
@@ -1179,7 +910,7 @@
     "name": "proposedNames",
     "inputs": [
       {
-        "name": "",
+        "name": "key",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1221,6 +952,50 @@
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "quoteBuyExactIn",
+    "inputs": [
+      {
+        "name": "marketId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "outcomeIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "grossAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "sharesBought",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "lmsrCost",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "fee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "totalCharge",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1332,19 +1107,6 @@
   },
   {
     "type": "function",
-    "name": "revokeMarketCreatorRole",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "revokeRoles",
     "inputs": [
       {
@@ -1384,19 +1146,6 @@
     "type": "function",
     "name": "seedDefaultRegions",
     "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setAllowAnyMarketCreator",
-    "inputs": [
-      {
-        "name": "allow",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -1454,19 +1203,6 @@
   },
   {
     "type": "function",
-    "name": "setMarketCreationFee",
-    "inputs": [
-      {
-        "name": "_marketCreationFee",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "setMarketTradingFee",
     "inputs": [
       {
@@ -1476,19 +1212,6 @@
       },
       {
         "name": "_feeBps",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setMaxOutcomes",
-    "inputs": [
-      {
-        "name": "newMaxOutcomes",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1535,6 +1258,19 @@
         "name": "_feeBps",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setValidation",
+    "inputs": [
+      {
+        "name": "_validation",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1658,130 +1394,6 @@
   },
   {
     "type": "function",
-    "name": "tradeRaw",
-    "inputs": [
-      {
-        "name": "tradeData",
-        "type": "tuple",
-        "internalType": "struct PredictionMarket.Trade",
-        "components": [
-          {
-            "name": "marketId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "deltaShares",
-            "type": "int256[]",
-            "internalType": "int256[]"
-          },
-          {
-            "name": "maxCost",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "minPayout",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "int256",
-        "internalType": "int256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "tradeWithPermit",
-    "inputs": [
-      {
-        "name": "tradeData",
-        "type": "tuple",
-        "internalType": "struct PredictionMarket.Trade",
-        "components": [
-          {
-            "name": "marketId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "deltaShares",
-            "type": "int256[]",
-            "internalType": "int256[]"
-          },
-          {
-            "name": "maxCost",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "minPayout",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "permitData",
-        "type": "tuple",
-        "internalType": "struct PredictionMarket.PermitArgs",
-        "components": [
-          {
-            "name": "value",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "deadline",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "v",
-            "type": "uint8",
-            "internalType": "uint8"
-          },
-          {
-            "name": "r",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "s",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "int256",
-        "internalType": "int256"
-      }
-    ],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "tradingFeeBps",
     "inputs": [],
     "outputs": [
@@ -1855,7 +1467,7 @@
     "name": "validRegions",
     "inputs": [
       {
-        "name": "",
+        "name": "key",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1865,6 +1477,19 @@
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "validation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract MarketValidation"
       }
     ],
     "stateMutability": "view"
@@ -1894,19 +1519,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "AllowAnyMarketCreatorUpdated",
-    "inputs": [
-      {
-        "name": "allow",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -1944,12 +1556,6 @@
         "internalType": "address"
       }
     ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "DefaultRegionsSeeded",
-    "inputs": [],
     "anonymous": false
   },
   {
@@ -2053,25 +1659,6 @@
         "type": "uint256[]",
         "indexed": false,
         "internalType": "uint256[]"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MarketCreationFeeUpdated",
-    "inputs": [
-      {
-        "name": "oldFee",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "newFee",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2190,44 +1777,6 @@
   },
   {
     "type": "event",
-    "name": "MaxOutcomesUpdated",
-    "inputs": [
-      {
-        "name": "oldMaxOutcomes",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "newMaxOutcomes",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "NameApproved",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "gender",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PredictionMarket.Gender"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "NameMarketCreated",
     "inputs": [
       {
@@ -2283,56 +1832,6 @@
   },
   {
     "type": "event",
-    "name": "NameProposed",
-    "inputs": [
-      {
-        "name": "name",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "gender",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PredictionMarket.Gender"
-      },
-      {
-        "name": "proposer",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "NamesMerkleRootUpdated",
-    "inputs": [
-      {
-        "name": "gender",
-        "type": "uint8",
-        "indexed": true,
-        "internalType": "enum PredictionMarket.Gender"
-      },
-      {
-        "name": "oldRoot",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "newRoot",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "OwnershipHandoverCanceled",
     "inputs": [
       {
@@ -2372,32 +1871,6 @@
         "type": "address",
         "indexed": true,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RegionAdded",
-    "inputs": [
-      {
-        "name": "region",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "RegionRemoved",
-    "inputs": [
-      {
-        "name": "region",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -2566,17 +2039,7 @@
   },
   {
     "type": "error",
-    "name": "CallerNotMarketCreator",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "CallerNotOracle",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "DefaultRegionsAlreadySeeded",
     "inputs": []
   },
   {
@@ -2592,11 +2055,6 @@
   {
     "type": "error",
     "name": "DuplicateQuestionId",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "EmptyOutcomeName",
     "inputs": []
   },
   {
@@ -2651,11 +2109,6 @@
   },
   {
     "type": "error",
-    "name": "InvalidMaxOutcomes",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidName",
     "inputs": []
   },
@@ -2667,6 +2120,11 @@
   {
     "type": "error",
     "name": "InvalidOracle",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidOutcomeIndex",
     "inputs": []
   },
   {
@@ -2696,6 +2154,16 @@
   },
   {
     "type": "error",
+    "name": "InvalidUsdc",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidValidation",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidYear",
     "inputs": []
   },
@@ -2721,16 +2189,6 @@
   },
   {
     "type": "error",
-    "name": "ParameterOutOfRange",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "QuestionIdCreatorMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "TradeExpired",
     "inputs": []
   },
@@ -2752,6 +2210,11 @@
   {
     "type": "error",
     "name": "UsdcTransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ValidationAlreadySet",
     "inputs": []
   },
   {

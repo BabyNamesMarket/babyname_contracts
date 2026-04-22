@@ -26,7 +26,7 @@ gas:
 export-abi:
 	@mkdir -p abi
 	forge inspect PredictionMarket abi --json > abi/PredictionMarket.json
-	forge inspect Launchpad abi --json > abi/Launchpad.json
+	forge inspect MarketValidation abi --json > abi/MarketValidation.json
 	forge inspect OutcomeToken abi --json > abi/OutcomeToken.json
 	@echo "ABIs exported to abi/"
 

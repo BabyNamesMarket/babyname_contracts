@@ -376,25 +376,7 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
 
         bytes32 marketId = EfficientHashLib.hash(abi.encodePacked(caller, oracle, questionId));
 
-        string[2] memory outcomeNames = ["YES", "NO"];
-        address[] memory outcomeTokens = new address[](2);
-
-        for (uint256 i = 0; i < 2; i++) {
-            OutcomeToken token = OutcomeToken(
-                LibClone.cloneDeterministic(
-                    outcomeTokenImplementation, EfficientHashLib.hash(abi.encodePacked(marketId, i))
-                )
-            );
-            token.initialize(
-                string.concat(outcomeNames[i], ": ", LibString.toHexString(uint256(questionId), 32)),
-                outcomeNames[i],
-                address(this)
-            );
-
-            outcomeTokens[i] = address(token);
-            tokenToMarketId[address(token)] = marketId;
-            tokenToOutcomeIndex[address(token)] = i;
-        }
+        address[] memory outcomeTokens = _deployOutcomeTokens(marketId, questionId);
 
         _markets[marketId] = MarketInfo({
             oracle: oracle,
@@ -412,7 +394,46 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
         });
         questionIdToMarketId[questionId] = marketId;
 
-        // Emit with dynamic arrays for ABI compatibility
+        _emitMarketCreated(
+            marketId, oracle, questionId, _surplusRecipient, caller, metadata, alpha, totalFee, outcomeTokens, outcomeQs
+        );
+        return marketId;
+    }
+
+    function _deployOutcomeTokens(bytes32 marketId, bytes32 questionId) internal returns (address[] memory outcomeTokens) {
+        outcomeTokens = new address[](2);
+        string[2] memory outcomeNames = ["YES", "NO"];
+
+        for (uint256 i = 0; i < 2; i++) {
+            OutcomeToken token = OutcomeToken(
+                LibClone.cloneDeterministic(
+                    outcomeTokenImplementation, EfficientHashLib.hash(abi.encodePacked(marketId, i))
+                )
+            );
+            token.initialize(
+                string.concat(outcomeNames[i], ": ", LibString.toHexString(uint256(questionId), 32)),
+                outcomeNames[i],
+                address(this)
+            );
+
+            outcomeTokens[i] = address(token);
+            tokenToMarketId[address(token)] = marketId;
+            tokenToOutcomeIndex[address(token)] = i;
+        }
+    }
+
+    function _emitMarketCreated(
+        bytes32 marketId,
+        address oracle,
+        bytes32 questionId,
+        address surplusRecipient,
+        address caller,
+        bytes memory metadata,
+        uint256 alpha,
+        uint256 totalFee,
+        address[] memory outcomeTokens,
+        uint256[] memory outcomeQs
+    ) internal {
         string[] memory outcomeNamesArray = new string[](2);
         outcomeNamesArray[0] = "YES";
         outcomeNamesArray[1] = "NO";
@@ -421,7 +442,7 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
             marketId,
             oracle,
             questionId,
-            _surplusRecipient,
+            surplusRecipient,
             caller,
             metadata,
             alpha,
@@ -430,7 +451,6 @@ contract PredictionMarket is OwnableRoles, UUPSUpgradeable {
             outcomeNamesArray,
             outcomeQs
         );
-        return marketId;
     }
 
     // ========== TRADING ==========

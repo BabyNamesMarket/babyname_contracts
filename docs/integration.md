@@ -1,199 +1,126 @@
 # Integration Guide
 
-## Install
+## Deployment Artifact
 
-```bash
-npm install github:BabyNamesMarket/babyname_contracts
-```
+Use `deployments/84532.json` for Base Sepolia addresses. The current artifact includes:
 
-## Imports
-
-```typescript
-import {
-  PredictionMarketABI,
-  LaunchpadABI,
-  OutcomeTokenABI,
-  getDeployment,
-  CHAIN_IDS,
-} from "@babynamesmarket/contracts";
-
-// Available chain IDs
-// CHAIN_IDS.baseSepolia = 84532
-// CHAIN_IDS.base = 8453
-// CHAIN_IDS.tempo = 4217
-// CHAIN_IDS.tempoTestnet = 42431
-
-const deploy = getDeployment(CHAIN_IDS.baseSepolia);
-// deploy.PredictionMarket - address
-// deploy.Launchpad - address
-// deploy.TestUSDC - address (testnet only)
-// deploy.CollateralToken - address
-// deploy.OutcomeTokenImpl - address
-```
+- `PredictionMarket`
+- `PredictionMarketImpl`
+- `Validation`
+- `TestUSDC`
+- `CollateralToken`
+- `OutcomeTokenImpl`
 
 ## Common Operations
 
-### Propose a Name
+### Mint Test USDC on Testnet
 
 ```typescript
-// 1. Approve Launchpad to spend USDC
-await usdc.write.approve([launchpadAddress, amount]);
+await testUsdc.write.mint([userAddress, 1_000_000_000n]); // 1000 USDC
+```
 
-// 2. Propose (creates proposal + commits in one tx)
-const proposalId = await launchpad.write.propose([
-  "olivia",           // name
-  2025,               // year (uint16)
-  1,                  // gender (0 = BOY, 1 = GIRL)
-  [],                 // merkle proof (empty if no whitelist)
-  [5000000n, 0n],     // amounts: [$5 YES, $0 NO]
+### Create a National Market
+
+```typescript
+await usdc.write.approve([predictionMarketAddress, 200_000_000n]);
+
+const marketId = await pm.write.createNameMarket([
+  "olivia",
+  2025,
+  1,                // GIRL
+  [],               // proof
+  [100_000_000n, 100_000_000n],
 ]);
 ```
 
-### Commit to Existing Proposal
+### Create a Regional Market
 
 ```typescript
-await launchpad.write.commit([
-  proposalId,         // bytes32
-  [10000000n, 0n],    // amounts: [$10 YES, $0 NO]
+const marketId = await pm.write.createRegionalNameMarket([
+  "olivia",
+  2025,
+  1,                // GIRL
+  "CA",
+  [],
+  [50_000_000n, 50_000_000n],
 ]);
 ```
 
-### Launch a Market
+### Quote an Exact-Input Buy
 
 ```typescript
-// Anyone can call once eligible
-await launchpad.write.launchMarket([proposalId]);
-```
-
-### Claim Shares After Launch
-
-```typescript
-await launchpad.write.claimShares([proposalId]);
-// Tokens sent directly to your wallet
-
-// Claim any USDC refund from unspent budget
-const refund = await launchpad.read.pendingRefunds([userAddress]);
-if (refund > 0n) {
-  await launchpad.write.claimRefund();
-}
-```
-
-### Trade on a Live Market
-
-```typescript
-// Get market info for quoting
-const info = await pm.read.getMarketInfo([marketId]);
-const prices = await pm.read.getPrices([marketId]);
-
-// Quote a trade (returns raw LMSR cost, no fee)
-const lmsrCost = await pm.read.quoteTrade([
-  info.outcomeQs,
-  info.alpha,
-  [10000000n, 0n],    // buy 10 YES shares (int256[])
+const quote = await pm.read.quoteBuyExactIn([
+  marketId,
+  0,                // YES
+  10_000_000n,      // 10 USDC gross
 ]);
 
-// Actual cost with 3% fee
-const fee = (lmsrCost * 300n) / (10000n - 300n);
-const grossCost = lmsrCost + fee;
+// quote = [sharesBought, lmsrCost, fee, totalCharge]
+```
 
-// Execute trade
+### Trade
+
+```typescript
 await pm.write.trade([{
   marketId,
-  deltaShares: [10000000n, 0n],
-  maxCost: grossCost + 1000n,   // small buffer for rounding
+  deltaShares: [10_000_000n, 0n],
+  maxCost: 15_000_000n,
   minPayout: 0n,
   deadline: BigInt(Math.floor(Date.now() / 1000) + 300),
 }]);
 ```
 
-### Redeem After Resolution
+### Resolve
 
 ```typescript
-// Check if market is resolved
+await pm.write.resolveMarketWithPayoutSplit([
+  marketId,
+  [1_000_000n, 0n],
+]);
+```
+
+### Redeem
+
+```typescript
 const info = await pm.read.getMarketInfo([marketId]);
-if (info.resolved) {
-  const yesToken = info.outcomeTokens[0];
-  const balance = await outcomeToken.read.balanceOf([userAddress]);
+const yesToken = info.outcomeTokens[0];
+const balance = await outcomeToken.read.balanceOf([userAddress]);
 
-  // Redeem: burns tokens, pays USDC
-  await pm.write.redeem([yesToken, balance]);
-}
+await pm.write.redeem([yesToken, balance]);
 ```
 
-## Reading State
-
-### Proposal Info
+## Useful Reads
 
 ```typescript
-const proposal = await launchpad.read.getProposal([proposalId]);
-// proposal.state: 0=OPEN, 1=LAUNCHED
-// proposal.gender: 0=BOY, 1=GIRL
-// proposal.launchTs: no more commits after this time
-// proposal.totalCommitted: gross USDC committed
-// proposal.totalFeesCollected: fees separated from commitments
-// proposal.totalPerOutcome: net USDC per outcome
-// proposal.name, proposal.year, proposal.region
-// proposal.marketId: set after launch
-```
-
-### Enumerating Proposals
-
-There's no `proposalCount()`. Enumerate via event logs:
-
-```typescript
-const events = await publicClient.getLogs({
-  address: launchpadAddress,
-  event: parseAbiItem(
-    'event ProposalCreated(bytes32 indexed proposalId, bytes32 indexed questionId, string name, uint8 gender, uint16 year, string region, address proposer, uint256 launchTs)'
-  ),
-  fromBlock: deploymentBlock,
-});
-```
-
-### Name and Market Keys
-
-```typescript
-const marketKey = await launchpad.read.getMarketKey([
-  "olivia",
-  1,        // GIRL
-  2025,
-  "",
-]);
-
-const proposalId = await launchpad.read.getProposalByMarketKey([
-  "olivia",
-  1,        // GIRL
-  2025,
-  "",
-]);
-```
-
-### Market Prices
-
-```typescript
+const info = await pm.read.getMarketInfo([marketId]);
 const prices = await pm.read.getPrices([marketId]);
-// prices[0] = YES price in 1e6 units (e.g. 535000 = $0.535)
-// prices[1] = NO price
-// Sum is slightly > 1e6 due to vig
+const exists = await pm.read.marketExists([marketId]);
+
+const validName = await pm.read.isValidName(["olivia", 1, []]);
+const validRegion = await pm.read.isValidRegion(["CA"]);
+```
+
+Validation helpers:
+
+```typescript
+const boysRoot = await pm.read.namesMerkleRoot([0]);
+const caAllowed = await pm.read.validRegions([keccak256(toBytes("CA"))]);
+const defaultsSeeded = await pm.read.defaultRegionsSeeded();
 ```
 
 ## Key Types
 
 | Value | Type | Notes |
-|-------|------|-------|
-| Proposal IDs | `bytes32` | NOT uint256 |
-| Market IDs | `bytes32` | NOT uint256 |
-| USDC amounts | `uint256` | 6 decimals (1e6 = $1) |
-| Share amounts | `uint256` | 6 decimals (1e6 = 1 share) |
-| Delta shares | `int256[]` | Positive = buy, negative = sell |
-| Prices | `uint256` | 6 decimals (1e6 = $1.00) |
-| Year | `uint16` | e.g. 2025 |
-| Fee bps | `uint256` | 300 = 3%, 500 = 5% |
+|---|---|---|
+| Market IDs | `bytes32` | returned by market creation |
+| USDC amounts | `uint256` | 6 decimals |
+| Share amounts | `uint256` | 6 decimals |
+| Delta shares | `int256[]` | positive buy, negative sell |
+| Prices | `uint256` | 6 decimals |
+| Year | `uint16` | e.g. `2025` |
 
-## Testnet USDC
+## Notes
 
-On testnets, `TestUSDC` has an open mint:
-
-```typescript
-await testUsdc.write.mint([userAddress, 1000000000n]); // mint $1000
-```
+- Names must be lowercased ASCII letters.
+- Regions are `""` for national or uppercase 2-letter US state codes.
+- The current repo does not expose a Launchpad contract.

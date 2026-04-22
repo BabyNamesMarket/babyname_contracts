@@ -1,107 +1,88 @@
 # Fee Model
 
-the protocol earns revenue from two sources: commitment fees and trading fees. Both are cleanly separated from the core LMSR math.
+The current protocol earns revenue from two sources:
 
-## Commitment Fee (5%)
+- creation fees on market creation
+- trading fees on buys and sells
 
-Collected by the Launchpad on every commitment. Separated at commit time, not at launch.
+## Creation Fee
 
-```
-User commits $20
-├── $1.00 fee (5%) → held by Launchpad
-└── $19.00 net → tracked for share distribution
-```
+Collected when a user creates a market with `createNameMarket` or `createRegionalNameMarket`.
 
-### At Launch
+Default:
 
-The collected fees fund the market's initial liquidity (phantom shares):
+- `creationFeeBps = 500`
+- `5%` of each side's initial buy budget
 
-```
-Total fees collected: $1.00
-Creation fee cap: $10.00
-Creation fee used: min($1.00, $10.00) = $1.00
-  → $0.50 per outcome → s = 14.3 phantom shares
-Excess fees: $0.00 → the protocol treasury
-```
-
-For larger commitments where fees exceed the cap:
+Example:
 
 ```
-$400 committed → $20 fees collected
-Creation fee used: min($20, $10) = $10
-  → $5 per outcome → s = 142.9 phantom shares
-Excess fees: $10 → the protocol treasury (direct revenue)
+Creator supplies [100 USDC YES, 100 USDC NO]
+├── 5 USDC creation fee from YES side
+├── 5 USDC creation fee from NO side
+└── 190 USDC total net budget enters bootstrap buys
 ```
 
-### On Expiry
-
-If the market never launches, users get 100% back:
+The total collected creation fee seeds symmetric phantom shares:
 
 ```
-User committed $20 gross
-Market expired without launching
-User withdraws $20 (full gross, fee is not charged)
+initialSharesPerOutcome = totalCreationFee * 1e6 / targetVig
 ```
 
-### Admin Controls
+### Odd-Fee Dust
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `commitmentFeeBps` | 500 (5%) | Fee rate on commitments |
-| `maxCreationFee` | $10 | Cap on fees used for phantom shares |
+If total creation fee is odd in micro-USDC units, the 1-unit dust is:
 
-## Trading Fee (3%)
+- explicitly collected from the creator
+- credited to `surplus[surplusRecipient]`
 
-Collected by PredictionMarket on every trade. Skimmed before the LMSR calculation sees the funds.
+This avoids unbacked surplus accounting.
 
-### On Buys
+## Trading Fee
 
-```
-User wants to buy shares, willing to pay $10 gross
-├── Fee: $10 × 3% ÷ (100% - 3%) = $0.31 → surplus[treasury]
-└── LMSR cost: $9.69 → market liquidity pool
-```
+Collected by `PredictionMarket` on every trade.
 
-The fee formula ensures the net amount exactly covers the LMSR cost:
-`fee = lmsrCost × feeBps ÷ (10000 - feeBps)`
+Default:
 
-### On Sells
+- `tradingFeeBps = 300`
+- `3%`
+
+### Buys
+
+For buys, the user pays:
 
 ```
-LMSR pays out $10
-├── Fee: $10 × 3% = $0.30 → surplus[treasury]
-└── User receives: $9.70
+gross cost = LMSR cost + fee
+fee = LMSR cost * feeBps / (10000 - feeBps)
 ```
 
-### Fee-Exempt Trades
+The fee is credited to `surplus[surplusRecipient]`. Only the net LMSR cost increases `totalUsdcIn`.
 
-The Launchpad's aggregate bootstrap trade uses `tradeRaw()` which bypasses the trading fee entirely. The commitment fee already covers this trade — double-charging would be unfair.
+### Sells
 
-### Per-Market Overrides
+For sells, the market computes the LMSR payout first, then skims the trading fee:
 
-Admin can set a custom trading fee for specific markets:
-
-```solidity
-predictionMarket.setMarketTradingFee(marketId, 100); // 1% for this market
-predictionMarket.setMarketTradingFee(marketId, 0);   // revert to global default
+```
+fee = LMSR payout * feeBps / 10000
+user receives = LMSR payout - fee
 ```
 
-### Admin Controls
+## Resolution Surplus
 
-| Parameter | Default | Max | Description |
-|-----------|---------|-----|-------------|
-| `tradingFeeBps` | 300 (3%) | 1000 (10%) | Global trading fee |
-| `marketTradingFeeBps[id]` | 0 (use global) | 1000 (10%) | Per-market override |
+At resolution, any remaining market pool after paying all outstanding winning claims is also credited to `surplus[surplusRecipient]`.
 
 ## Revenue Summary
 
-| Source | Rate | When | Goes To |
-|--------|------|------|---------|
-| Commitment fee | 5% | At commit | Phantom shares (up to $10) + the protocol excess |
-| Trading fee (buys) | 3% | Each buy | `surplus[surplusRecipient]` |
-| Trading fee (sells) | 3% | Each sell | `surplus[surplusRecipient]` |
-| Vig surplus | ~7% of balanced volume | At resolution | `surplus[surplusRecipient]` |
+| Source | Default | When | Recipient |
+|---|---|---|---|
+| Creation fee | `5%` | On market creation | Phantom shares + odd dust to surplus |
+| Trading fee | `3%` | On each buy/sell | `surplus[surplusRecipient]` |
+| Resolution surplus | variable | On resolution | `surplus[surplusRecipient]` |
 
-The vig surplus is unreliable on one-sided markets (if YES wins and all bets were YES, surplus is minimal). The commitment and trading fees provide guaranteed revenue regardless of resolution outcome.
+## Withdrawal
 
-Surplus is withdrawn by the recipient via `predictionMarket.withdrawSurplus()`.
+Surplus is withdrawn by the credited address:
+
+```solidity
+predictionMarket.withdrawSurplus();
+```

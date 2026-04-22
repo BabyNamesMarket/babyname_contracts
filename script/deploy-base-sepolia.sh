@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+set -a
 source .env
-
-STAGE="${DEPLOY_STAGE:-commit}"
+set +a
 
 # Use nightly foundry if available (handles Base Sepolia receipt format)
 NIGHTLY_DIR="$HOME/.foundry/bin"
@@ -11,35 +11,15 @@ if [ -x "$NIGHTLY_DIR/forge" ]; then
   export PATH="$NIGHTLY_DIR:$PATH"
 fi
 
-# Live stage always deploys its own TestUSDC (deployer needs balance to seed markets)
-if [ "$STAGE" = "commit" ]; then
-  export COLLATERAL_TOKEN_ADDRESS="${COLLATERAL_TOKEN_ADDRESS:-${TOKEN_ADDRESS:-}}"
+SCRIPT="script/DeployTestnet.s.sol:DeployTestnet"
+ARTIFACT="deployments/84532.json"
+
+# Base Sepolia should always get a fresh mintable TestUSDC unless the caller
+# explicitly overrides the token address for a one-off deployment.
+if [ -n "${COLLATERAL_TOKEN_ADDRESS:-}" ]; then
+  echo "Using explicit collateral token: $COLLATERAL_TOKEN_ADDRESS"
 else
-  unset COLLATERAL_TOKEN_ADDRESS
-fi
-
-case "$STAGE" in
-  commit)
-    SCRIPT="script/DeployTestnet.s.sol:DeployTestnet"
-    ARTIFACT="deployments/84532.json"
-    ;;
-  live)
-    SCRIPT="script/DeployTestnetLive.s.sol:DeployTestnetLive"
-    ARTIFACT="deployments/84532-live.json"
-    ;;
-  *)
-    echo "Unknown DEPLOY_STAGE: $STAGE (expected 'commit' or 'live')"
-    exit 1
-    ;;
-esac
-
-echo "Deploying stage: $STAGE"
-
-EXTRA_FLAGS=""
-# Live deploy uses timestamp-dependent proposalIds; skip on-chain simulation
-# because forge replays txs with different block.timestamps, causing ID mismatch.
-if [ "$STAGE" = "live" ]; then
-  EXTRA_FLAGS="--skip-simulation --slow"
+  echo "Deploying fresh TestUSDC for Base Sepolia"
 fi
 
 set +e
@@ -47,12 +27,13 @@ forge script "$SCRIPT" \
   --rpc-url "$BASE_SEPOLIA_RPC_URL" \
   --private-key "$PRIVATE_KEY" \
   --broadcast \
-  $EXTRA_FLAGS
+  --slow
 STATUS=$?
 set -e
 
-if [ $STATUS -ne 0 ] && [ ! -f "$ARTIFACT" ]; then
+if [ $STATUS -ne 0 ]; then
   exit $STATUS
 fi
 
-DEPLOY_STAGE="$STAGE" node scripts/update-base-sepolia-metadata.js
+node scripts/update-base-sepolia-metadata.js
+node scripts/verify-base-sepolia.js

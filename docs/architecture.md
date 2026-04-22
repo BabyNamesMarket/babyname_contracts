@@ -3,83 +3,88 @@
 ## Contract Relationships
 
 ```
-                    ┌─────────────────┐
-                    │    Launchpad    │
-                    │                 │
-                    │  propose()      │
-                    │  commit()       │
-                    │  launchMarket() │
-                    │  claimShares()  │
-                    └────────┬────────┘
-                             │ createMarket()
-                             │ tradeRaw()
-                             ▼
-                    ┌─────────────────┐         ┌──────────────┐
-                    │ PredictionMarket│────────▸│ OutcomeToken │
-                    │                 │  clone   │   (YES)      │
-                    │  trade()        │  deploy  ├──────────────┤
-                    │  redeem()       │────────▸│ OutcomeToken │
-                    │  resolve()      │          │   (NO)       │
-                    └─────────────────┘         └──────────────┘
-                             │
-                    USDC flows in/out
+                ┌────────────────────┐
+                │   PredictionMarket │
+                │                    │
+                │ createNameMarket() │
+                │ trade()            │
+                │ resolve()          │
+                │ redeem()           │
+                └───────┬─────┬──────┘
+                        │     │
+         validation()   │     │ cloneDeterministic()
+                        ▼     ▼
+              ┌──────────────────┐   ┌──────────────┐
+              │ MarketValidation │   │ OutcomeToken │
+              │                  │   │  YES / NO    │
+              │ name roots       │   └──────────────┘
+              │ approved names   │
+              │ 50-state rules   │
+              └──────────────────┘
 ```
 
-## Launchpad
-
-Handles the pre-market commitment phase:
-
-- **Name validation** via per-gender Merkle roots of SSA names
-- **Gender/year/region scoping** — each `(name, gender, year, region)` is a unique market
-- **Commitment accumulation** — users commit USDC to YES/NO outcomes
-- **5% fee separation** at commit time — fees fund phantom shares at launch
-- **Scheduled launch times** — year-wide launch dates or per-proposal fallback times
-- **Lazy share distribution** — `launchMarket()` is O(1), users claim individually
-- **Proposal-local budgeting** — one proposal cannot spend another proposal’s funds
-
-After a market launches, the Launchpad's job is done. Users interact with PredictionMarket directly for trading.
+`TestUSDC` is a testnet-only collateral token with real USDC metadata plus open minting.
 
 ## PredictionMarket
 
-The core LMSR automated market maker:
+The core contract owns market state and the LMSR engine:
 
-- **Market creation** with deterministic OutcomeToken clones
-- **Trading** with 3% fee (skimmed before LMSR math)
-- **Fee-exempt `tradeRaw()`** for Launchpad's bootstrap trade
-- **Resolution** by oracle with arbitrary payout splits
-- **Redemption** — burn tokens for USDC proportional to payout
-- **Surplus** — vig + trading fees accumulate for the surplus recipient
+- creates direct binary YES/NO baby-name markets
+- deploys deterministic `OutcomeToken` clones
+- collects creation fees and trading fees
+- enforces pausability and oracle-based resolution
+- stores surplus balances for withdrawal
+
+Markets are unique per `(name, gender, year, region)`.
+
+## MarketValidation
+
+Validation is intentionally split out of `PredictionMarket` to keep PM under the EIP-170 runtime limit while still enforcing:
+
+- per-gender Merkle roots
+- manual lowercased name approvals
+- user name proposals
+- built-in 50-state US abbreviation validation
+- explicit region add/remove overrides
+
+On Base Sepolia, `PredictionMarket` is deployed behind an `ERC1967Proxy`, initialized atomically, then bound once to a separately deployed `MarketValidation`.
 
 ## OutcomeToken
 
-Minimal ERC20 (6 decimals, matching USDC) deployed as deterministic clones via `LibClone`. Each market gets one token per outcome (typically YES and NO). Only PredictionMarket can mint/burn.
+Each market gets two 6-decimal ERC20 outcome tokens:
 
-## Role Model
+- `YES`
+- `NO`
 
-| Role | Who | Can Do |
-|------|-----|--------|
-| Owner (msg.sender at deploy) | Deployer / deploying contract | Initialize, grant roles |
-| PROTOCOL_MANAGER_ROLE | the protocol multisig | Set fees, vig, max outcomes, bailout |
-| MARKET_CREATOR_ROLE | Launchpad contract | Create markets, fee-exempt trades |
-| Oracle (per-market) | Deployer (testnet) | Resolve markets, pause/unpause |
-| Launchpad Owner | Deployer | Open/close years, set launch dates, set roots, approve names, set parameters |
+Only `PredictionMarket` can mint and burn them.
+
+## Roles
+
+| Role | Can Do |
+|---|---|
+| Owner | Bind validation, open/close years, set roots, approve names, set defaults, set creation fee, authorize upgrades |
+| `PROTOCOL_MANAGER_ROLE` | Set vig, trading fees, market fee overrides, global pause |
+| Oracle | Resolve markets, pause/unpause its markets |
 
 ## USDC Flow
 
 ```
-User commits $20 to Launchpad
-  ├── $1 fee (5%) held by Launchpad
-  └── $19 net tracked for share distribution
+Creator creates market with [YES budget, NO budget]
+  ├── 5% creation fee per side
+  ├── fee seeds phantom shares
+  ├── odd fee dust is collected and credited to surplus
+  └── remaining net budgets buy YES/NO shares
 
-Launch:
-  ├── $1 fee → PredictionMarket (creation fee → phantom shares)
-  └── $19 net → PredictionMarket (aggregate trade → outcome tokens)
+Trader buys shares
+  ├── trading fee → surplus[surplusRecipient]
+  └── net amount → LMSR pool
 
-Post-launch trade of $10:
-  ├── $0.30 fee (3%) → surplus[treasury]
-  └── $9.70 → LMSR cost function
+Trader sells shares
+  ├── LMSR pays gross proceeds
+  ├── trading fee retained as surplus
+  └── trader receives net proceeds
 
-Resolution (YES wins):
-  ├── Token holders redeem YES tokens for $1 each
-  └── Remaining USDC → surplus[treasury] (vig)
+Resolution
+  ├── winners redeem tokens for USDC
+  └── leftover market pool → surplus[surplusRecipient]
 ```

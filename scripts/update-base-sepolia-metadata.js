@@ -3,11 +3,8 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
-const STAGE = process.env.DEPLOY_STAGE || "commit";
-const DEPLOYMENT_PATH = STAGE === "commit"
-  ? path.join(ROOT, "deployments/84532.json")
-  : path.join(ROOT, `deployments/84532-${STAGE}.json`);
-const BROADCAST_SCRIPT = STAGE === "live" ? "DeployTestnetLive.s.sol" : "DeployTestnet.s.sol";
+const DEPLOYMENT_PATH = path.join(ROOT, "deployments/84532.json");
+const BROADCAST_SCRIPT = "DeployTestnet.s.sol";
 const BROADCAST_PATH = path.join(ROOT, `broadcast/${BROADCAST_SCRIPT}/84532/run-latest.json`);
 
 function requireFile(filePath) {
@@ -66,18 +63,14 @@ function main() {
   const deployment = readJson(DEPLOYMENT_PATH);
   const broadcast = readJson(BROADCAST_PATH);
 
-  const pmCreateTx = getCreateTxHash(broadcast, "PredictionMarket", deployment.PredictionMarket);
-  const launchpadCreateTx = getCreateTxHash(broadcast, "Launchpad", deployment.Launchpad);
-  const startBlock = Math.min(
-    getBlockNumber(pmCreateTx, rpcUrl),
-    getBlockNumber(launchpadCreateTx, rpcUrl)
-  ) - 1;
+  if (!deployment.PredictionMarketImpl || !deployment.PredictionMarket) {
+    throw new Error(`Deployment artifact is missing PredictionMarket addresses: ${DEPLOYMENT_PATH}`);
+  }
 
-  // Goldsky auto-appends the chain name, so the deployed slugs are:
-  //   commit: babynames-market-base-sepolia/1.0.0
-  //   live:   babynames-market-live-base-sepolia/1.0.0
-  const subgraphPrefix = STAGE === "commit" ? "babynames-market" : `babynames-market-${STAGE}`;
-  const subgraphName = `${subgraphPrefix}-base-sepolia`;
+  const pmCreateTx = getCreateTxHash(broadcast, "PredictionMarket", deployment.PredictionMarketImpl);
+  const startBlock = getBlockNumber(pmCreateTx, rpcUrl) - 1;
+
+  const subgraphName = "babynames-market-base-sepolia";
   const subgraphSlug = `${subgraphName}/1.0.0`;
 
   deployment.goldsky = {
@@ -89,18 +82,11 @@ function main() {
     startBlock,
     abis: {
       PredictionMarket: "./abi/PredictionMarket.json",
-      Launchpad: "./abi/Launchpad.json",
     },
     instances: [
       {
         abi: "PredictionMarket",
         address: deployment.PredictionMarket,
-        startBlock,
-        chain: "base-sepolia",
-      },
-      {
-        abi: "Launchpad",
-        address: deployment.Launchpad,
         startBlock,
         chain: "base-sepolia",
       },
@@ -112,7 +98,7 @@ function main() {
   process.stdout.write(
     `Deployment metadata updated:\n`
       + `PredictionMarket=${deployment.PredictionMarket}\n`
-      + `Launchpad=${deployment.Launchpad}\n`
+      + `PredictionMarketImpl=${deployment.PredictionMarketImpl}\n`
       + `startBlock=${startBlock}\n`
       + `deployment=${DEPLOYMENT_PATH}\n`
   );

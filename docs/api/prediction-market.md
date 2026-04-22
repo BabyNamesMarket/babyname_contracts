@@ -2,139 +2,167 @@
 
 `src/PredictionMarket.sol`
 
-A prediction market contract using a liquidity-sensitive Logarithmic Market Scoring Rule (LMSR) for outcome pricing. Markets are created with a set of named outcomes, funded by a creation fee that seeds phantom shares. Traders buy and sell outcome tokens, and after the oracle resolves the market, token holders redeem for USDC proportional to the payout split.
+The current `PredictionMarket` contract is a direct baby-name LMSR market maker. Users create binary YES/NO markets for `(name, gender, year, region)` tuples, trade outcome tokens against the LMSR curve, and redeem after oracle resolution.
 
----
+## Core Types
 
-## Structs
+### `Gender`
 
-### `CreateMarketParams`
-
-| Field | Type | Description |
-|---|---|---|
-| `oracle` | `address` | Address authorized to resolve the market |
-| `creationFeePerOutcome` | `uint256` | USDC fee per outcome (6 decimals). If 0, uses the global `marketCreationFee` |
-| `initialBuyMaxCost` | `uint256` | Max USDC the creator will pay for the optional initial buy trade. 0 to skip |
-| `questionId` | `bytes32` | Unique question identifier. First 20 bytes must equal `msg.sender` |
-| `surplusRecipient` | `address` | Address that receives trading fees and resolution surplus |
-| `metadata` | `bytes` | Arbitrary metadata emitted in the `MarketCreated` event |
-| `initialBuyShares` | `int256[]` | Share amounts for an optional initial buy (must be non-negative). Length must match `outcomeNames` |
-| `outcomeNames` | `string[]` | Names of each outcome (2 to `maxOutcomes`) |
+| Value | Meaning |
+|---|---|
+| `0` | `BOY` |
+| `1` | `GIRL` |
 
 ### `MarketInfo`
 
-| Field | Type | Description |
+| Field | Type | Notes |
 |---|---|---|
-| `oracle` | `address` | Oracle address |
-| `resolved` | `bool` | Whether the market has been resolved |
+| `oracle` | `address` | Resolver for the market |
+| `resolved` | `bool` | Whether payout percentages are set |
 | `paused` | `bool` | Whether trading is paused |
-| `alpha` | `uint256` | LMSR alpha parameter (controls price sensitivity) |
-| `totalUsdcIn` | `uint256` | Total USDC held by the market's LMSR pool |
-| `creator` | `address` | Market creator address |
-| `questionId` | `bytes32` | Question identifier |
-| `surplusRecipient` | `address` | Recipient of fees and surplus |
-| `outcomeQs` | `uint256[]` | Current quantity of shares outstanding per outcome |
-| `outcomeTokens` | `address[]` | Outcome token contract addresses |
-| `payoutPcts` | `uint256[]` | Payout percentages per outcome (set on resolution, sum to 1e6) |
-| `initialSharesPerOutcome` | `uint256` | Phantom shares seeded at creation |
+| `alpha` | `uint256` | LMSR sensitivity parameter |
+| `totalUsdcIn` | `uint256` | Net USDC held by the LMSR pool |
+| `creator` | `address` | Market creator |
+| `questionId` | `bytes32` | PM-local question identifier |
+| `surplusRecipient` | `address` | Trading fee + resolution surplus recipient |
+| `outcomeQs` | `uint256[]` | Current outstanding quantities |
+| `outcomeTokens` | `address[]` | YES/NO token addresses |
+| `payoutPcts` | `uint256[]` | Resolution payouts, sums to `1e6` |
+| `initialSharesPerOutcome` | `uint256` | Phantom shares per outcome |
 
 ### `Trade`
 
-| Field | Type | Description |
+| Field | Type | Notes |
 |---|---|---|
-| `marketId` | `bytes32` | Market to trade in |
-| `deltaShares` | `int256[]` | Shares to buy (positive) or sell (negative) per outcome |
-| `maxCost` | `uint256` | Maximum gross USDC to spend (buys, including fee) |
-| `minPayout` | `uint256` | Minimum net USDC to receive (sells, after fee) |
-| `deadline` | `uint256` | Transaction deadline timestamp |
+| `marketId` | `bytes32` | Market to trade |
+| `deltaShares` | `int256[]` | Positive = buy, negative = sell |
+| `maxCost` | `uint256` | Max gross spend for buys |
+| `minPayout` | `uint256` | Min net proceeds for sells |
+| `deadline` | `uint256` | Trade expiry |
 
-### `PermitArgs`
+## Important State
 
-| Field | Type | Description |
+| Name | Type | Notes |
 |---|---|---|
-| `value` | `uint256` | Permit approval amount |
-| `deadline` | `uint256` | Permit deadline |
-| `v` | `uint8` | ECDSA v |
-| `r` | `bytes32` | ECDSA r |
-| `s` | `bytes32` | ECDSA s |
+| `usdc` | `IERC20` | Collateral token |
+| `validation` | `MarketValidation` | External validator for names and regions |
+| `outcomeTokenImplementation` | `address` | Clone target for YES/NO tokens |
+| `targetVig` | `uint256` | Default `70_000` |
+| `tradingFeeBps` | `uint256` | Default `300` = 3% |
+| `creationFeeBps` | `uint256` | Default `500` = 5% |
+| `globalPaused` | `bool` | Emergency trading pause |
+| `yearOpen` | `mapping(uint16 => bool)` | Enabled years |
+| `marketKeyToMarketId` | `mapping(bytes32 => bytes32)` | `(name, gender, year, region)` lookup |
+| `marketKeyToQuestionId` | `mapping(bytes32 => bytes32)` | Reverse lookup helper |
+| `surplus` | `mapping(address => uint256)` | Withdrawable fees + surplus |
 
-### `ExponentialTerms`
-
-| Field | Type | Description |
-|---|---|---|
-| `expTerms` | `uint256[]` | Exponentiated term per outcome |
-| `sumExp` | `uint256` | Sum of all exponential terms |
-| `offset` | `int256` | Numerical offset for stability |
-
----
-
-## Constants
-
-| Name | Value | Description |
-|---|---|---|
-| `ONE` | `1e6` | Fixed-point unit (6 decimals, matches USDC) |
-| `DEFAULT_TARGET_VIG` | `70_000` | Default target vig (7% in 6-decimal fixed point) |
-| `DEFAULT_MARKET_CREATION_FEE` | `5e6` | Default per-outcome creation fee (5 USDC) |
-| `COST_ROUNDING_BUFFER` | `1` | Rounding buffer for cost calculations |
-| `QUOTE_TRADE_ROUNDING_BUFFER` | `1` | Rounding buffer added to positive trade quotes |
-| `PROTOCOL_MANAGER_ROLE` | `1 << 0` | Role bit for protocol management functions |
-| `MARKET_CREATOR_ROLE` | `1 << 1` | Role bit for market creation (when `allowAnyMarketCreator` is false) |
-| `MAX_TRADING_FEE_BPS` | `1000` | Maximum trading fee (10%) |
-
----
-
-## State Variables
-
-| Name | Type | Description |
-|---|---|---|
-| `usdc` | `IERC20` | USDC token contract |
-| `outcomeTokenImplementation` | `address` | OutcomeToken implementation used for minimal proxy clones |
-| `targetVig` | `uint256` | Target vig used to derive alpha and initial shares for new markets |
-| `marketCreationFee` | `uint256` | Default per-outcome creation fee in USDC |
-| `allowAnyMarketCreator` | `bool` | When true, anyone can create markets without `MARKET_CREATOR_ROLE` |
-| `tradingFeeBps` | `uint256` | Global trading fee in basis points (default 300 = 3%) |
-| `marketTradingFeeBps` | `mapping(bytes32 => uint256)` | Per-market trading fee override. 0 means use global |
-| `markets` | `mapping(bytes32 => MarketInfo)` | Market data by market ID |
-| `tokenToMarketId` | `mapping(address => bytes32)` | Maps outcome token address to its market ID |
-| `tokenToOutcomeIndex` | `mapping(address => uint256)` | Maps outcome token address to its outcome index |
-| `questionIdToMarketId` | `mapping(bytes32 => bytes32)` | Maps question ID to market ID |
-| `surplus` | `mapping(address => uint256)` | Accumulated surplus (fees + resolution surplus) per recipient |
-
----
-
-## Functions
+## Initialization and Admin
 
 ### `initialize`
 
 ```solidity
-function initialize(address _usdc) external
+function initialize(address _usdc, address _validation, address _owner) external
 ```
 
-Initializes the contract with the USDC token address. Deploys the OutcomeToken implementation, sets default target vig, market creation fee, max outcomes, and trading fee. Can only be called once.
+Initializes the proxy with collateral token, optional validation contract, and explicit owner. On Base Sepolia this runs atomically in the `ERC1967Proxy` constructor.
 
-**Access:** `onlyOwner`
-
-**Parameters:**
-- `_usdc` -- USDC token contract address
-
----
-
-### `createMarket`
+### `setValidation`
 
 ```solidity
-function createMarket(CreateMarketParams calldata params) external returns (bytes32)
+function setValidation(address _validation) external
 ```
 
-Creates a new prediction market with the specified outcomes. The creation fee funds phantom shares whose quantity is derived from `totalFee * ONE / targetVig`. Optionally executes an initial buy trade if `initialBuyMaxCost > 0`.
+One-time owner-only binding for the external `MarketValidation` contract.
 
-**Access:** `MARKET_CREATOR_ROLE` (unless `allowAnyMarketCreator` is true)
+### `setDefaultOracle`
 
-**Parameters:**
-- `params` -- Market creation parameters (see `CreateMarketParams` struct)
+```solidity
+function setDefaultOracle(address _oracle) external
+```
 
-**Returns:** The `bytes32` market ID.
+Sets the default oracle used for newly created name markets.
 
----
+### `setDefaultSurplusRecipient`
+
+```solidity
+function setDefaultSurplusRecipient(address _surplusRecipient) external
+```
+
+Sets the default fee and resolution-surplus recipient for new markets.
+
+### `openYear` / `closeYear`
+
+```solidity
+function openYear(uint16 year) external
+function closeYear(uint16 year) external
+```
+
+Owner-only year gating for market creation.
+
+### Validation Admin
+
+```solidity
+function seedDefaultRegions() external
+function addRegion(string calldata region) external
+function removeRegion(string calldata region) external
+function setNamesMerkleRoot(Gender gender, bytes32 root) external
+function approveName(string calldata name, Gender gender) external
+function proposeName(string calldata name, Gender gender) external
+```
+
+These functions manage the external `MarketValidation` contract. `seedDefaultRegions()` enables the built-in 50-state abbreviation set.
+
+### Fee and Pause Admin
+
+```solidity
+function setTargetVig(uint256 newTargetVig) external
+function setTradingFee(uint256 _feeBps) external
+function setMarketTradingFee(bytes32 marketId, uint256 _feeBps) external
+function setCreationFeeBps(uint256 _bps) external
+function setGlobalPaused(bool paused) external
+```
+
+`setTargetVig`, `setTradingFee`, `setMarketTradingFee`, and `setGlobalPaused` require `PROTOCOL_MANAGER_ROLE`. `setCreationFeeBps` is owner-only.
+
+## Market Creation
+
+### `createNameMarket`
+
+```solidity
+function createNameMarket(
+    string calldata name,
+    uint16 year,
+    Gender gender,
+    bytes32[] calldata proof,
+    uint256[] calldata initialBuyAmounts
+) external returns (bytes32)
+```
+
+Creates a national market with region `""`.
+
+### `createRegionalNameMarket`
+
+```solidity
+function createRegionalNameMarket(
+    string calldata name,
+    uint16 year,
+    Gender gender,
+    string calldata region,
+    bytes32[] calldata proof,
+    uint256[] calldata initialBuyAmounts
+) external returns (bytes32)
+```
+
+Creates a regional market. Region must be empty or a valid US state code accepted by `MarketValidation`.
+
+Creation notes:
+
+- `initialBuyAmounts` must have length 2 for YES and NO.
+- Each side pays a 5% creation fee by default.
+- The fee seeds symmetric phantom shares used for initial LMSR depth.
+- Any 1-unit rounding dust is explicitly collected and credited to `surplus`.
+
+## Trading and Resolution
 
 ### `trade`
 
@@ -142,67 +170,30 @@ Creates a new prediction market with the specified outcomes. The creation fee fu
 function trade(Trade memory tradeData) external returns (int256)
 ```
 
-Executes a trade with the trading fee applied. On buys, the user pays gross cost (LMSR cost + fee). On sells, the user receives net payout (LMSR payout - fee). Fees accrue to the market's `surplusRecipient`.
+Main trading entrypoint. Buys pay gross cost including fee. Sells receive net proceeds after fee.
 
-**Access:** Anyone
-
-**Parameters:**
-- `tradeData` -- Trade parameters (see `Trade` struct)
-
-**Returns:** The raw LMSR cost delta (positive = user paid, negative = user received, before fees).
-
----
-
-### `tradeWithPermit`
+### `buyExactIn`
 
 ```solidity
-function tradeWithPermit(Trade memory tradeData, PermitArgs calldata permitData) external returns (int256)
+function buyExactIn(
+    bytes32 marketId,
+    uint256 outcomeIndex,
+    uint256 grossAmount,
+    uint256 minSharesOut,
+    uint256 deadline
+) external returns (uint256 sharesBought)
 ```
 
-Same as `trade` but first calls EIP-2612 `permit` on the USDC token to set an allowance, enabling gasless approvals.
+Exact-input buy helper. The trading fee is taken from `grossAmount` first, then the remaining budget is applied to the LMSR curve.
 
-**Access:** Anyone
-
-**Parameters:**
-- `tradeData` -- Trade parameters (see `Trade` struct)
-- `permitData` -- EIP-2612 permit arguments (see `PermitArgs` struct)
-
-**Returns:** The raw LMSR cost delta.
-
----
-
-### `tradeRaw`
+### `pauseMarket` / `unpauseMarket`
 
 ```solidity
-function tradeRaw(Trade memory tradeData) external returns (int256)
+function pauseMarket(bytes32 marketId) external
+function unpauseMarket(bytes32 marketId) external
 ```
 
-Fee-exempt trade intended for the Launchpad's aggregate bootstrapping trade. Executes a pure LMSR trade with no trading fee. `maxCost` and `minPayout` apply to raw LMSR amounts.
-
-**Access:** `onlyRoles(MARKET_CREATOR_ROLE)`
-
-**Parameters:**
-- `tradeData` -- Trade parameters (see `Trade` struct)
-
-**Returns:** The raw LMSR cost delta.
-
----
-
-### `redeem`
-
-```solidity
-function redeem(address token, uint256 amount) external
-```
-
-Redeems outcome tokens for USDC after market resolution. Burns the specified tokens and transfers USDC proportional to the outcome's payout percentage.
-
-**Access:** Anyone (must hold the outcome tokens)
-
-**Parameters:**
-- `token` -- Outcome token address to redeem
-- `amount` -- Number of tokens to redeem
-
----
+Callable by the market oracle or a protocol manager.
 
 ### `resolveMarketWithPayoutSplit`
 
@@ -210,106 +201,15 @@ Redeems outcome tokens for USDC after market resolution. Burns the specified tok
 function resolveMarketWithPayoutSplit(bytes32 marketId, uint256[] calldata payoutPcts) external
 ```
 
-Resolves a market by setting the payout percentages for each outcome. Payout percentages must sum to `1e6`. Any surplus USDC (market pool minus total owed to token holders) is credited to the `surplusRecipient`.
+Sets resolution payouts. `payoutPcts` must sum to `1e6`.
 
-**Access:** Market oracle only (`msg.sender == market.oracle`)
-
-**Parameters:**
-- `marketId` -- Market to resolve
-- `payoutPcts` -- Payout percentage for each outcome (must sum to 1e6)
-
----
-
-### `pauseMarket`
+### `redeem`
 
 ```solidity
-function pauseMarket(bytes32 marketId) external
+function redeem(address token, uint256 amount) external
 ```
 
-Pauses trading on a market. The market must not already be resolved or paused.
-
-**Access:** Market oracle only
-
-**Parameters:**
-- `marketId` -- Market to pause
-
----
-
-### `unpauseMarket`
-
-```solidity
-function unpauseMarket(bytes32 marketId) external
-```
-
-Resumes trading on a paused market. The market must be currently paused and not resolved.
-
-**Access:** Market oracle only
-
-**Parameters:**
-- `marketId` -- Market to unpause
-
----
-
-### `setMarketCreationFee`
-
-```solidity
-function setMarketCreationFee(uint256 _marketCreationFee) external
-```
-
-Sets the default per-outcome market creation fee. Must be non-zero.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `_marketCreationFee` -- New fee in USDC (6 decimals)
-
----
-
-### `setTargetVig`
-
-```solidity
-function setTargetVig(uint256 newTargetVig) external
-```
-
-Sets the target vig used to derive alpha and initial shares for new markets. Must be non-zero.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `newTargetVig` -- New target vig value
-
----
-
-### `setTradingFee`
-
-```solidity
-function setTradingFee(uint256 _feeBps) external
-```
-
-Sets the global trading fee in basis points. Cannot exceed `MAX_TRADING_FEE_BPS` (1000 = 10%).
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `_feeBps` -- New fee in basis points (e.g., 300 = 3%)
-
----
-
-### `setMarketTradingFee`
-
-```solidity
-function setMarketTradingFee(bytes32 marketId, uint256 _feeBps) external
-```
-
-Sets a per-market trading fee override. Set to 0 to revert to the global fee. Cannot exceed `MAX_TRADING_FEE_BPS`.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `marketId` -- Market to configure
-- `_feeBps` -- Fee in basis points (0 = use global)
-
----
+Burns resolved YES/NO tokens and pays the corresponding USDC amount.
 
 ### `withdrawSurplus`
 
@@ -317,276 +217,41 @@ Sets a per-market trading fee override. Set to 0 to revert to the global fee. Ca
 function withdrawSurplus() external
 ```
 
-Withdraws all accumulated surplus (trading fees + resolution surplus) for `msg.sender`. Reverts if the caller has no surplus.
+Withdraws accumulated trading fees, odd-fee dust, and post-resolution surplus for `msg.sender`.
 
-**Access:** Anyone (withdraws own surplus)
-
----
-
-### `setAllowAnyMarketCreator`
+## Read Functions
 
 ```solidity
-function setAllowAnyMarketCreator(bool allow) external
-```
-
-Toggles whether anyone can create markets or only addresses with `MARKET_CREATOR_ROLE`.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `allow` -- `true` to allow anyone, `false` to require the role
-
----
-
-### `grantMarketCreatorRole`
-
-```solidity
-function grantMarketCreatorRole(address account) external
-```
-
-Grants `MARKET_CREATOR_ROLE` to an address.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `account` -- Address to grant the role to
-
----
-
-### `revokeMarketCreatorRole`
-
-```solidity
-function revokeMarketCreatorRole(address account) external
-```
-
-Revokes `MARKET_CREATOR_ROLE` from an address.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `account` -- Address to revoke the role from
-
----
-
-### `setMaxOutcomes`
-
-```solidity
-function setMaxOutcomes(uint256 newMaxOutcomes) external
-```
-
-Sets the maximum number of outcomes allowed per market. Must be at least 2.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `newMaxOutcomes` -- New maximum
-
----
-
-### `bailoutMarket`
-
-```solidity
-function bailoutMarket(bytes32 marketId, uint256 bailoutAmount) external
-```
-
-Injects additional USDC into a market's pool to cover insolvency. Transfers USDC from the caller.
-
-**Access:** `onlyRoles(PROTOCOL_MANAGER_ROLE)`
-
-**Parameters:**
-- `marketId` -- Market to bail out
-- `bailoutAmount` -- USDC amount to inject
-
----
-
-### `getPrices`
-
-```solidity
+function isValidName(string memory name, Gender gender, bytes32[] calldata proof) public view returns (bool)
+function isValidRegion(string memory region) public view returns (bool)
 function getPrices(bytes32 marketId) external view returns (uint256[] memory)
-```
-
-Returns the current prices for all outcomes in a market.
-
-**Access:** Anyone (view)
-
-**Parameters:**
-- `marketId` -- Market to query
-
-**Returns:** Array of prices per outcome (6-decimal fixed point, sum slightly above 1e6 due to vig).
-
----
-
-### `getMarketInfo`
-
-```solidity
+function quoteBuyExactIn(bytes32 marketId, uint256 outcomeIndex, uint256 grossAmount)
+    external
+    view
+    returns (uint256 sharesBought, uint256 lmsrCost, uint256 fee, uint256 totalCharge)
 function getMarketInfo(bytes32 marketId) external view returns (MarketInfo memory)
-```
-
-Returns the full `MarketInfo` struct for a market.
-
-**Access:** Anyone (view)
-
-**Parameters:**
-- `marketId` -- Market to query
-
-**Returns:** `MarketInfo` struct.
-
----
-
-### `marketExists`
-
-```solidity
 function marketExists(bytes32 marketId) public view returns (bool)
+function namesMerkleRoot(uint8 gender) external view returns (bytes32)
+function approvedNames(bytes32 key) external view returns (bool)
+function proposedNames(bytes32 key) external view returns (bool)
+function validRegions(bytes32 key) external view returns (bool)
+function defaultRegionsSeeded() external view returns (bool)
 ```
 
-Checks whether a market exists (has outcome tokens deployed).
-
-**Access:** Anyone (view)
-
-**Parameters:**
-- `marketId` -- Market to check
-
-**Returns:** `true` if the market exists.
-
----
-
-### `calculateAlpha`
+## Math Helpers
 
 ```solidity
 function calculateAlpha(uint256 nOutcomes, uint256 _targetVig) public pure returns (uint256)
+function cost(uint256[] memory qs, uint256 alpha) public pure returns (uint256)
+function calcPrice(uint256[] memory qs, uint256 alpha) public pure returns (uint256[] memory)
+function computeExponentialTerms(uint256[] memory qs, uint256 bWad)
+    public
+    pure
+    returns (ExponentialTerms memory)
+function quoteTrade(uint256[] memory qs, uint256 alpha, int256[] memory deltaShares)
+    public
+    pure
+    returns (int256)
 ```
 
-Calculates the LMSR alpha parameter for a given number of outcomes and target vig. Formula: `alpha = targetVig / (nOutcomes * ln(nOutcomes))`.
-
-**Access:** Anyone (pure)
-
-**Parameters:**
-- `nOutcomes` -- Number of outcomes
-- `_targetVig` -- Target vig value
-
-**Returns:** The alpha parameter.
-
----
-
-### `cost`
-
-```solidity
-function cost(uint256[] memory qs, uint256 alpha) public pure returns (uint256 c)
-```
-
-Calculates the LMSR cost function for a given market state. Uses the liquidity-sensitive logarithmic scoring rule with offset exponentials for numerical stability.
-
-**Access:** Anyone (pure)
-
-**Parameters:**
-- `qs` -- Array of share quantities per outcome
-- `alpha` -- LMSR alpha parameter
-
-**Returns:** The cost value.
-
----
-
-### `calcPrice`
-
-```solidity
-function calcPrice(uint256[] memory qs, uint256 alpha) public pure returns (uint256[] memory prices)
-```
-
-Calculates current prices for all outcomes from the softmax distribution with an entropy adjustment term.
-
-**Access:** Anyone (pure)
-
-**Parameters:**
-- `qs` -- Array of share quantities per outcome
-- `alpha` -- LMSR alpha parameter
-
-**Returns:** Array of prices per outcome.
-
----
-
-### `computeExponentialTerms`
-
-```solidity
-function computeExponentialTerms(uint256[] memory qs, uint256 bWad) public pure returns (ExponentialTerms memory terms)
-```
-
-Computes offset exponential terms used internally by `cost` and `calcPrice` for numerically stable calculations.
-
-**Access:** Anyone (pure)
-
-**Parameters:**
-- `qs` -- Array of share quantities per outcome
-- `bWad` -- The `b` parameter in WAD (18-decimal) precision
-
-**Returns:** `ExponentialTerms` struct containing per-outcome exp terms, their sum, and the offset.
-
----
-
-### `quoteTrade`
-
-```solidity
-function quoteTrade(uint256[] memory qs, uint256 alpha, int256[] memory deltaShares) public pure returns (int256 costDelta)
-```
-
-Quotes the raw LMSR cost of a trade without executing it. Positive means the user would pay; negative means the user would receive. Does not include the trading fee.
-
-**Access:** Anyone (pure)
-
-**Parameters:**
-- `qs` -- Current share quantities per outcome
-- `alpha` -- LMSR alpha parameter
-- `deltaShares` -- Shares to buy (positive) or sell (negative) per outcome
-
-**Returns:** The LMSR cost delta.
-
----
-
-## Events
-
-| Event | Description |
-|---|---|
-| `MarketCreated(bytes32 indexed marketId, address indexed oracle, bytes32 indexed questionId, address surplusRecipient, address creator, bytes metadata, uint256 alpha, uint256 marketCreationFeeTotal, address[] outcomeTokens, string[] outcomeNames, uint256[] outcomeQs)` | Emitted when a market is created |
-| `MarketResolved(bytes32 indexed marketId, uint256[] payoutPcts, uint256 surplus)` | Emitted when a market is resolved |
-| `MarketTraded(bytes32 indexed marketId, address indexed trader, uint256 alpha, int256 usdcFlow, uint256 fee, int256[] deltaShares, uint256[] outcomeQs)` | Emitted on every trade |
-| `TokensRedeemed(bytes32 indexed marketId, address indexed redeemer, address token, uint256 shares, uint256 payout)` | Emitted when tokens are redeemed for USDC |
-| `SurplusWithdrawn(address indexed to, uint256 amount)` | Emitted when surplus is withdrawn |
-| `AllowAnyMarketCreatorUpdated(bool allow)` | Emitted when the open-creation flag changes |
-| `MarketPausedUpdated(bytes32 indexed marketId, bool paused)` | Emitted when a market is paused or unpaused |
-| `MarketCreationFeeUpdated(uint256 oldFee, uint256 newFee)` | Emitted when the creation fee changes |
-| `TargetVigUpdated(uint256 oldTargetVig, uint256 newTargetVig)` | Emitted when the target vig changes |
-| `MaxOutcomesUpdated(uint256 oldMaxOutcomes, uint256 newMaxOutcomes)` | Emitted when max outcomes changes |
-| `TradingFeeUpdated(uint256 oldBps, uint256 newBps)` | Emitted when the global trading fee changes |
-| `MarketTradingFeeUpdated(bytes32 indexed marketId, uint256 bps)` | Emitted when a per-market trading fee is set |
-
----
-
-## Errors
-
-| Error | Description |
-|---|---|
-| `CallerNotOracle()` | Caller is not the market's oracle |
-| `CallerNotMarketCreator()` | Caller lacks `MARKET_CREATOR_ROLE` |
-| `DuplicateQuestionId()` | A market already exists for this question ID |
-| `EmptyOutcomeName()` | An outcome name is empty |
-| `EmptyQuestionId()` | Question ID is `bytes32(0)` |
-| `InsufficientInputAmount()` | Trade cost exceeds `maxCost` |
-| `InsufficientOutputAmount()` | Trade payout is below `minPayout` |
-| `InvalidFee()` | Fee value is invalid (e.g., zero creation fee) |
-| `InvalidMarketState()` | Market is in a state that does not allow this operation |
-| `InvalidOracle()` | Oracle address is zero |
-| `InvalidPayout()` | Payout array is wrong length or does not sum to 1e6 |
-| `InvalidInitialShares()` | Derived initial shares are zero |
-| `InvalidMaxOutcomes()` | Max outcomes is below minimum (2) |
-| `InvalidTargetVig()` | Target vig is zero |
-| `InvalidNumOutcomes()` | Outcome count is out of range or mismatched |
-| `InvalidTradingFee()` | Trading fee exceeds `MAX_TRADING_FEE_BPS` |
-| `MarketInsolvent()` | Market USDC is less than total owed payouts |
-| `ParameterOutOfRange()` | Generic parameter validation failure |
-| `MarketDoesNotExist()` | No market found for the given ID |
-| `InvalidSurplusRecipient()` | Surplus recipient is zero address |
-| `ZeroSurplus()` | No surplus to withdraw |
-| `BuysOnly()` | Initial trade contains negative (sell) deltas |
-| `InitialFundingInvariantViolation()` | Fee does not cover the minimum funding requirement |
-| `TradeExpired()` | Trade deadline has passed |
-| `QuestionIdCreatorMismatch()` | First 20 bytes of `questionId` do not match `msg.sender` |
-| `UsdcTransferFailed()` | USDC transfer returned false |
+`quoteTrade` now guarantees that any buy-side trade which mints positive shares costs at least `1` micro-USDC, preventing free mints from rounding-to-zero.

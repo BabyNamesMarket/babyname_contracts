@@ -1,138 +1,97 @@
 # Market Lifecycle
 
-## Phase 1: Proposal
+## Phase 1: Admin Setup
 
-Anyone can propose a market for a valid `(name, gender, year, region)` tuple. The proposer commits capital in the same transaction.
+Before market creation:
+
+- owner binds `MarketValidation` with `setValidation`
+- owner sets `defaultOracle`
+- owner sets `defaultSurplusRecipient`
+- owner opens a year with `openYear(year)`
+- owner seeds the built-in 50-state region set with `seedDefaultRegions()`
+- owner optionally sets Merkle roots with `setNamesMerkleRoot`
+
+## Phase 2: Market Creation
+
+Anyone can create a market for a valid `(name, gender, year, region)` tuple:
 
 ```solidity
-// Propose "olivia" for 2025 girls national ranking, commit $20 to YES
-launchpad.propose("olivia", 2025, Launchpad.Gender.GIRL, merkleProof, [20e6, 0]);
+predictionMarket.createNameMarket("olivia", 2025, PredictionMarket.Gender.GIRL, proof, [20e6, 0]);
+predictionMarket.createRegionalNameMarket("olivia", 2025, PredictionMarket.Gender.GIRL, "CA", proof, [10e6, 10e6]);
 ```
 
 Requirements:
-- Name must be valid for that gender (Merkle proof or manually approved)
-- Year must be open (`yearOpen[2025] == true`)
-- Region must be valid (empty string for national, or a US state abbreviation like "CA")
-- No active proposal for the same `(name, gender, year, region)` combination
-- At least one non-zero commitment amount
 
-The 5% commitment fee is separated immediately:
-- $20 gross → $1 fee + $19 net
-- Net amounts are tracked per-outcome for share distribution
-- Gross totals are tracked for proposal budgeting
+- name is lowercased ASCII letters only
+- year is open
+- region is empty or a valid US state code / approved override
+- market key is unique
+- `initialBuyAmounts.length == 2`
+- gross budget is non-zero
 
-## Phase 2: Commitment
+## Phase 3: Fee Split and Bootstrap
 
-Other users add capital to the proposal:
+On creation:
 
-```solidity
-launchpad.commit(proposalId, [10e6, 0]);  // $10 more on YES
-launchpad.commit(proposalId, [0, 5e6]);   // $5 on NO
-```
+- each side pays the creation fee in basis points, default `5%`
+- the total fee seeds symmetric phantom shares
+- any odd 1-unit fee dust is explicitly collected and credited to `surplus`
+- the remaining net YES/NO budgets are spent into the fresh LMSR market
 
-Users can commit multiple times. Amounts accumulate. Each commitment has its 5% fee separated.
+The creator receives the resulting YES/NO outcome tokens directly.
 
-## Phase 3: Launch
+## Phase 4: Trading
 
-Anyone can trigger the launch once `block.timestamp >= launchTs`:
+Once created, anyone can trade:
 
 ```solidity
-launchpad.launchMarket(proposalId);
-```
-
-### How `launchTs` Is Determined
-
-- If `yearLaunchDate[year]` is in the future when the proposal is created, the proposal is tied to that shared year launch date.
-- Otherwise the proposal gets an individual launch time of `createdAt + postBatchTimeout` (default 24 hours).
-- Updating `yearLaunchDate(year, newDate)` changes the effective launch time for commit-stage proposals that are still tied to the shared year schedule.
-
-Commitments are accepted only before `launchTs`. There is no withdrawal or cancellation path.
-
-### What Happens at Launch
-
-1. **Fee split**: `min(totalFeesCollected, maxCreationFee)` funds symmetric phantom shares, excess goes to the protocol
-2. **Market creation**: PredictionMarket deploys OutcomeToken clones, sets up LMSR state
-3. **Proposal-local budgeting**: the Launchpad derives this proposal’s `tradingBudget` from its own committed funds only
-4. **Binary search**: Finds the maximum affordable aggregate trade within that proposal-local budget
-5. **Aggregate trade**: Buys shares proportional to commitment ratios at the initial 50/50 price (fee-exempt via `tradeRaw`)
-5. **Store results**: Share totals and cost recorded for lazy distribution
-
-The launch transaction is O(1) in committer count — no loop over users.
-
-## Phase 4: Claim Shares
-
-Each user calls `claimShares` to receive their outcome tokens:
-
-```solidity
-launchpad.claimShares(proposalId);
-// Outcome tokens sent directly to wallet
-// Any unspent USDC credited to pendingRefunds
-
-launchpad.claimRefund();  // withdraw pending refunds
-```
-
-Shares are distributed proportional to each user's net committed amount per outcome. All users get the same effective price (same-price guarantee).
-
-After claiming, users hold standard ERC20 outcome tokens and can trade freely.
-
-## Phase 5: Trading
-
-The market is live on PredictionMarket. Anyone can trade:
-
-```solidity
-// Buy 10 YES shares (maxCost includes 3% fee)
 predictionMarket.trade(Trade({
     marketId: marketId,
     deltaShares: [int256(10e6), int256(0)],
-    maxCost: 15e6,     // willing to pay up to $15 gross
+    maxCost: 15e6,
     minPayout: 0,
     deadline: block.timestamp + 300
 }));
-
-// Sell 5 YES shares
-predictionMarket.trade(Trade({
-    marketId: marketId,
-    deltaShares: [int256(-5e6), int256(0)],
-    maxCost: 0,
-    minPayout: 1e6,    // want at least $1 net after fee
-    deadline: block.timestamp + 300
-}));
 ```
 
-The 3% trading fee is skimmed before the LMSR calculation:
-- **Buys**: User pays gross, fee deducted, net covers LMSR cost
-- **Sells**: LMSR pays out, fee deducted, net goes to user
+Trading behavior:
 
-## Phase 6: Resolution
+- buys pay gross cost including the trading fee
+- sells receive net payout after the trading fee
+- tiny buy-side trades are rounded up so positive mints can never be free
+- markets can be paused globally or per-market
 
-The oracle resolves the market when SSA data is published:
+## Phase 5: Resolution
+
+The oracle resolves the market with payout percentages summing to `1e6`:
 
 ```solidity
-// YES wins 100%
 predictionMarket.resolveMarketWithPayoutSplit(marketId, [1e6, 0]);
-
-// Or a 60/40 split
-predictionMarket.resolveMarketWithPayoutSplit(marketId, [600000, 400000]);
 ```
 
-Payout percentages must sum to exactly `1e6` (100%). The oracle can also pause/unpause markets while waiting for data.
+Resolution computes:
 
-At resolution:
-- Outstanding shares (above phantom shares) determine total payout
-- Remaining USDC in the market becomes surplus (vig revenue for the protocol)
+- token-holder payouts owed on outstanding shares
+- remaining pool surplus owed to `surplusRecipient`
 
-## Phase 7: Redemption
+## Phase 6: Redemption
 
-Token holders redeem for USDC:
+Token holders redeem resolved YES/NO tokens:
 
 ```solidity
-predictionMarket.redeem(yesTokenAddress, amount);
-// Burns tokens, pays amount * payoutPct / 1e6 in USDC
+predictionMarket.redeem(tokenAddress, amount);
 ```
 
-If YES won 100%: each YES token redeems for $1.00, each NO token for $0.00.
+This burns outcome tokens and transfers USDC according to the resolved payout percentage.
 
-## Proposal Notes
+## Phase 7: Surplus Withdrawal
 
-- `withdrawCommitment(proposalId)` and `cancelProposal(proposalId)` are legacy selectors and now always revert with `CommitmentsFinal()`.
-- Namespaces are gender-specific throughout the proposal flow and Merkle validation.
+Recipients can withdraw:
+
+- trading fees
+- collected odd creation-fee dust
+- post-resolution market surplus
+
+```solidity
+predictionMarket.withdrawSurplus();
+```

@@ -1,113 +1,102 @@
 # LMSR Pricing
 
-The market uses Liquidity-Sensitive LMSR (LS-LMSR) from [Othman et al. 2013](https://dl.acm.org/doi/10.1145/2509413.2509414). This page explains the math for those who want to understand the pricing.
+The market uses a liquidity-sensitive LMSR. This page focuses on the math used by the current `PredictionMarket` contract.
 
 ## Core Formulas
 
-### Alpha (market responsiveness)
+### Alpha
 
 ```
 alpha = targetVig / (n × ln(n))
 ```
 
-For a binary market (n=2) with 7% vig:
+For a binary market with `n = 2` and `targetVig = 70_000`:
+
 ```
-alpha = 0.07 / (2 × ln(2)) = 0.05049
+alpha ≈ 0.05049 in normalized units
 ```
 
-### Liquidity parameter b
+### Liquidity Parameter
 
 ```
 b = alpha × totalQ / ONE
 ```
 
-Where `totalQ = sum of all outcome quantities`. b grows as trading volume increases — the market becomes deeper over time (liquidity-sensitive).
+Where `totalQ` is the sum of outstanding YES and NO quantities.
 
-### Cost function
+### Cost Function
 
 ```
 cost(q) = b × ln(Σ exp(qᵢ / b))
 ```
 
-The cost of moving from state A to state B is:
-```
-tradeCost = cost(B) - cost(A)
-```
-
-This is **path-independent** — the cost is the same regardless of the order trades are executed.
-
-### Prices
+Trade cost is the delta between the old and new market states:
 
 ```
-price_i = softmax(qᵢ / b) + alpha × H(s)
-```
-
-Where `H(s)` is the entropy of the softmax distribution. Prices always sum to slightly above 1.0 (the excess is the vig).
-
-### Numerical stability
-
-All exponentials use offset subtraction to prevent overflow:
-
-```
-offset = max(qᵢ) / b
-expᵢ = exp(qᵢ/b - offset)
-sumExp = Σ expᵢ
-lnSum = ln(sumExp) + offset    // add offset back
-cost = b × lnSum
+tradeCost = cost(newQ) - cost(oldQ)
 ```
 
 ## Phantom Shares
 
-When a market is created, each outcome starts with `initialSharesPerOutcome` (s) phantom shares. These aren't owned by anyone — they provide the initial liquidity curve.
+Markets are seeded with symmetric phantom shares funded by the creation fee:
 
 ```
-s = totalCreationFee × ONE / targetVig
+initialSharesPerOutcome = totalCreationFee × ONE / targetVig
 ```
 
-At $5 per outcome (binary): `s = 10,000,000 / 70,000 = 142.86`
+Example:
 
-The phantom shares determine initial market depth:
+```
+Initial budgets: [100 USDC, 100 USDC]
+Creation fee: 5% per side
+Total creation fee: 10 USDC
+initialSharesPerOutcome = 10e6 × 1e6 / 70_000 ≈ 142.857 shares
+```
 
-| Creation Fee (total) | s (shares) | b₀ | Cost: 50¢ → 90¢ |
-|---------------------|------------|-----|------------------|
-| $0.10 | 1.4 | 0.14 | $0.27 |
-| $1.00 | 14.3 | 1.44 | $2.74 |
-| $5.00 | 71.4 | 7.21 | $13.68 |
-| $10.00 | 142.9 | 14.43 | $27.36 |
+These phantom shares are not owned by users. They provide initial depth so the first trades do not move price infinitely.
+
+## Numerical Stability
+
+Exponentials are computed with an offset:
+
+```
+offset = max(qᵢ) / b
+expᵢ = exp(qᵢ / b - offset)
+```
+
+This avoids overflow while preserving the correct `log-sum-exp` result.
+
+## Trading Fees vs LMSR Cost
+
+The fee layer sits on top of the pure LMSR quote.
+
+### Buy
+
+```
+gross paid by user = LMSR cost + fee
+fee = LMSR cost × feeBps / (10000 - feeBps)
+```
+
+### Sell
+
+```
+gross LMSR payout = -quoteTrade(...)
+fee = gross payout × feeBps / 10000
+net received by user = gross payout - fee
+```
+
+`quoteTrade()` returns the fee-free LMSR delta.
+
+## Rounding Safety
+
+The contract rounds buy-side quotes so that any positive mint costs at least `1` micro-USDC. This prevents zero-cost minting from integer rounding.
 
 ## Solvency
 
-The LMSR guarantees solvency: `cost(q) >= max(qᵢ)` for any state. This means the contract always holds enough USDC to cover the worst-case payout. This is a mathematical property of log-sum-exp.
-
-Verified across 512 randomized trade sequences in fuzz tests with zero insolvency events.
-
-## How Trading Fees Interact
-
-Trading fees are a layer **on top of** the LMSR:
+At resolution, the contract verifies:
 
 ```
-User wants to buy shares:
-  1. User sends $10 gross to PredictionMarket
-  2. PM skims 3% fee ($0.31) → surplus
-  3. Remaining $9.69 goes to LMSR cost function
-  4. LMSR computes how many shares $9.69 buys
-  5. Tokens minted to user
+totalUsdcIn >= totalPayout
 ```
 
-The LMSR never sees the fee. `quoteTrade()` returns the pure LMSR cost. The fee is added on top by the `trade()` function.
-
-The Launchpad's bootstrap trade uses `tradeRaw()` which skips the fee entirely — the commitment fee already covered the bootstrap.
-
-## Example: Price Movement
-
-Starting from 50/50 with s=142.9 (from $10 creation fee):
-
-| Action | YES Price | NO Price | Cost |
-|--------|-----------|----------|------|
-| Initial state | $0.535 | $0.535 | - |
-| Buy 10 YES | $0.546 | $0.524 | $5.44 |
-| Buy 50 YES | $0.601 | $0.471 | $26.84 |
-| Buy 100 YES | $0.685 | $0.394 | $51.91 |
-| Buy 500 YES | $0.969 | $0.063 | $190.97 |
-
-Prices approach but never reach $0 or $1 — there's always a small probability assigned to every outcome.
+Any remainder becomes withdrawable surplus for the configured recipient.

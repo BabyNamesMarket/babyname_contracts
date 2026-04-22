@@ -13,12 +13,30 @@ cp .env.example .env
 make deploy-base-sepolia
 ```
 
-Deploys PredictionMarket and Launchpad, uses the configured collateral token, then updates the local `deployments/84532.json` artifact with Goldsky metadata by:
+Deploys a fresh `PredictionMarket` stack to Base Sepolia, verifies the deployed contracts on Basescan during the deployment run, and then updates the local `deployments/84532.json` artifact with Goldsky metadata by:
 
 - deriving `startBlock` from the actual deployment tx block
 - storing the Goldsky endpoint, subgraph name, and instance config alongside the deployed addresses
 
-If `COLLATERAL_TOKEN_ADDRESS` is unset, the script deploys a fresh `TestUSDC`.
+The Base Sepolia flow now deploys:
+
+- an implementation contract
+- an `ERC1967Proxy` initialized atomically in the proxy constructor
+- a separate `MarketValidation` contract bound once via `setValidation`
+
+This avoids the old uninitialized-proxy ownership race while keeping `PredictionMarket` under the EIP-170 size limit.
+
+By default the script deploys a fresh mintable `TestUSDC` that matches real USDC metadata and decimals:
+
+- name: `USD Coin`
+- symbol: `USDC`
+- decimals: `6`
+- extra testnet-only function: `mint(address,uint256)`
+
+Optional environment flags:
+
+- `COLLATERAL_TOKEN_ADDRESS` to override the collateral token for a one-off deploy
+- `SEED_SAMPLE_MARKETS=true` to create the sample `liam` and `olivia` markets after deployment
 
 ## Tempo Testnet
 
@@ -31,8 +49,13 @@ make deploy-tempo-testnet
 
 ### Base Sepolia (84532)
 
-| Contract | Address |
-|----------|---------|
-| PredictionMarket | `0x7000667CF33833F97120a13b4D12A795142f6F6c` |
-| Launchpad | `0x08EDA78b3434A7774Cb4a012B2D7c8231F09882b` |
-| TestUSDC / CollateralToken | `0x43fAbD625f96b93edAC2F370a2fe246b2E09A575` |
+The canonical deployment record lives in `deployments/84532.json` and is overwritten on each fresh Base Sepolia deployment.
+
+Current addresses:
+
+- `PredictionMarket`: `0x99B9922A59C69c30fC3008b715B59Dd0FF029Dd6`
+- `PredictionMarketImpl`: `0x6e6CB2A4a133E2eD4aE31b129032BA220fe1e137`
+- `MarketValidation`: `0xeb5cDedEcF102c86E8cbf5e0Da9589262F3a3EF6`
+- `TestUSDC`: `0x1440ee2e2Fa5Fc93290AF034899cC10423316854`
+- `OutcomeTokenImpl`: `0xD347bb9b279F06A04c7c4611d76cF91648D70A58`
+- `startBlock`: `40515229`

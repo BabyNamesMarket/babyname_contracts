@@ -2,20 +2,19 @@
 
 LMSR prediction markets for SSA baby name rankings.
 
-Users bet on whether baby names will appear in the Social Security Administration's annual top rankings. Markets are bootstrapped through commitments: propose a name, commit capital, wait for the scheduled launch time, then claim the resulting outcome tokens once the live market is created.
+Users create direct binary YES/NO markets for `(name, gender, year, region)` tuples, trade outcome tokens against the LMSR curve, and redeem after oracle resolution.
 
 **[Documentation](https://babynamesmarket.github.io/babyname_contracts/)** | **[API Reference](https://babynamesmarket.github.io/babyname_contracts/api/prediction-market.html)**
 
 ## How It Works
 
 ```
-1. Propose a name      →  launchpad.propose("olivia", 2025, GIRL, proof, [$5, $0])
-2. Others commit       →  launchpad.commit(proposalId, [$10, $0])
-3. Launch time arrives →  launchpad.launchMarket(proposalId)
-4. Claim tokens        →  launchpad.claimShares(proposalId)
-5. Trade freely        →  predictionMarket.trade(...)
-6. Oracle resolves     →  predictionMarket.resolveMarketWithPayoutSplit(...)
-7. Redeem winnings     →  predictionMarket.redeem(token, amount)
+1. Admin opens year    →  `openYear(2025)`
+2. User creates market →  `createNameMarket("olivia", 2025, GIRL, proof, [100e6, 100e6])`
+3. Trade freely        →  `trade(...)` or `buyExactIn(...)`
+4. Oracle resolves     →  `resolveMarketWithPayoutSplit(...)`
+5. Redeem winnings     →  `redeem(token, amount)`
+6. Withdraw fees       →  `withdrawSurplus()`
 ```
 
 ## Contracts
@@ -23,8 +22,9 @@ Users bet on whether baby names will appear in the Social Security Administratio
 | Contract | Description |
 |----------|-------------|
 | **PredictionMarket** | LS-LMSR market maker with 3% trading fee |
-| **Launchpad** | Commitment bootstrapping with 5% fee, gender/year/region scoping |
+| **MarketValidation** | External name + region validation module |
 | **OutcomeToken** | ERC20 per outcome (YES/NO), 6 decimals |
+| **TestUSDC** | Testnet USDC clone with open mint and real USDC metadata |
 
 Based on [Context Markets](https://github.com/contextwtf/contracts), used under license.
 
@@ -32,30 +32,24 @@ Based on [Context Markets](https://github.com/contextwtf/contracts), used under 
 
 | Fee | Rate | When | Purpose |
 |-----|------|------|---------|
-| Commitment | 5% | At commit | Funds phantom shares (market depth) + protocol revenue |
+| Creation | 5% | At market creation | Funds phantom shares + odd dust surplus |
 | Trading | 3% | Each trade | protocol revenue (skimmed before LMSR math) |
-
-Commitment fees are separated at commit time. Proposals launch into a live market on schedule; unspent launch budget is claimable as a refund after launch.
 
 ## Market Scoping
 
 Markets are unique per **(name, gender, year, region)**:
-- `propose("olivia", 2025, GIRL, ...)` — national ranking
-- `proposeRegional("olivia", 2025, GIRL, "CA", ...)` — California state ranking
+- `createNameMarket("olivia", 2025, GIRL, ...)` — national ranking
+- `createRegionalNameMarket("olivia", 2025, GIRL, "CA", ...)` — California state ranking
 
 Names are lowercased for validation and uniqueness. Merkle roots and manual approvals are also gender-specific.
 
-50 US states prepopulated. Years locked by default — admin opens with `openYear(2025)`.
+The built-in 50 US states are enabled with `seedDefaultRegions()`. Years are locked by default and must be opened by admin.
 
 ## Deployments
 
 ### Base Sepolia (84532)
 
-| Contract | Address |
-|----------|---------|
-| PredictionMarket | [`0x7000...6F6c`](https://sepolia.basescan.org/address/0x7000667CF33833F97120a13b4D12A795142f6F6c) |
-| Launchpad | [`0x08ED...882b`](https://sepolia.basescan.org/address/0x08EDA78b3434A7774Cb4a012B2D7c8231F09882b) |
-| TestUSDC | [`0x43fA...A575`](https://sepolia.basescan.org/address/0x43fAbD625f96b93edAC2F370a2fe246b2E09A575) |
+Run `make deploy-base-sepolia` to deploy a fresh Base Sepolia instance. The deployment wrapper now uses a single script/artifact path, verifies contracts automatically, and defaults to deploying a mintable testnet `USDC` clone with 6 decimals.
 
 ## Quick Start
 
@@ -73,15 +67,7 @@ npm install github:BabyNamesMarket/contracts
 ```
 
 ```javascript
-const {
-  PredictionMarketABI,
-  LaunchpadABI,
-  getDeployment,
-  getGoldskyConfig,
-  CHAIN_IDS,
-}
-  = require("@babynamesmarket/contracts");
-
+const { getDeployment, getGoldskyConfig, CHAIN_IDS } = require("@babynamesmarket/contracts");
 const deploy = getDeployment(CHAIN_IDS.baseSepolia);
 const goldsky = getGoldskyConfig(CHAIN_IDS.baseSepolia);
 ```
@@ -95,7 +81,7 @@ const goldsky = getGoldskyConfig(CHAIN_IDS.baseSepolia);
 - [LMSR Pricing](docs/lmsr.md)
 - [Integration Guide](docs/integration.md)
 - [Deployment](docs/deployment.md)
-- API Reference: [PredictionMarket](docs/api/prediction-market.md) | [Launchpad](docs/api/launchpad.md) | [OutcomeToken](docs/api/outcome-token.md)
+- API Reference: [PredictionMarket](docs/api/prediction-market.md) | [OutcomeToken](docs/api/outcome-token.md)
 
 ## License
 

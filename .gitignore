@@ -19,3 +19,6 @@ data/merkle-tree.json
 
 # Generated SVG previews (local build output)
 /previews/
+
+# Rust / Solana workspace
+/solana/

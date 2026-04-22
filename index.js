@@ -2,7 +2,6 @@ const fs = require("fs");
 const path = require("path");
 
 const PredictionMarketABI = require("./abi/PredictionMarket.json");
-const LaunchpadABI = require("./abi/Launchpad.json");
 const OutcomeTokenABI = require("./abi/OutcomeToken.json");
 
 function getDeployment(chainId) {
@@ -27,7 +26,6 @@ const CHAIN_IDS = {
 
 module.exports = {
   PredictionMarketABI,
-  LaunchpadABI,
   OutcomeTokenABI,
   getDeployment,
   getGoldskyConfig,

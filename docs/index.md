@@ -1,10 +1,10 @@
 # BabyNames Prediction Markets
 
-Prediction markets for SSA baby name rankings, powered by LMSR automated market making.
+Prediction markets for SSA baby name rankings, powered by an LMSR automated market maker.
 
 ## How It Works
 
-Users bet on whether a baby name will appear in the Social Security Administration's annual top name rankings. Markets are bootstrapped through a commitment system: users propose names, commit capital until the scheduled launch time, then claim into a live LMSR market after launch.
+Users bet on whether a baby name will appear in the Social Security Administration's annual top name rankings. Markets are created directly on `PredictionMarket` for `(name, gender, year, region)` tuples and trade as binary YES/NO LMSR markets.
 
 ## Quick Links
 
@@ -22,7 +22,7 @@ Users bet on whether a baby name will appear in the Social Security Administrati
 | Contract | Description |
 |----------|-------------|
 | [PredictionMarket](api/prediction-market.md) | LMSR market maker with 3% trading fee |
-| [Launchpad](api/launchpad.md) | Commitment bootstrapping with 5% fee, gender/year/region scoping |
+| MarketValidation | External validation rules for names and regions |
 | [OutcomeToken](api/outcome-token.md) | ERC20 outcome tokens (YES/NO) |
 
 ## Deployed Addresses
@@ -31,8 +31,9 @@ Users bet on whether a baby name will appear in the Social Security Administrati
 
 | Contract | Address |
 |----------|---------|
-| PredictionMarket | [`0x7000...6F6c`](https://sepolia.basescan.org/address/0x7000667CF33833F97120a13b4D12A795142f6F6c) |
-| Launchpad | [`0x08ED...882b`](https://sepolia.basescan.org/address/0x08EDA78b3434A7774Cb4a012B2D7c8231F09882b) |
-| TestUSDC | [`0x43fA...A575`](https://sepolia.basescan.org/address/0x43fAbD625f96b93edAC2F370a2fe246b2E09A575) |
+| PredictionMarket | [`0x99B9...9Dd6`](https://sepolia.basescan.org/address/0x99B9922A59C69c30fC3008b715B59Dd0FF029Dd6) |
+| PredictionMarket Impl | [`0x6e6C...e137`](https://sepolia.basescan.org/address/0x6e6CB2A4a133E2eD4aE31b129032BA220fe1e137) |
+| MarketValidation | [`0xeb5c...3EF6`](https://sepolia.basescan.org/address/0xeb5cDedEcF102c86E8cbf5e0Da9589262F3a3EF6) |
+| TestUSDC | [`0x1440...6854`](https://sepolia.basescan.org/address/0x1440ee2e2Fa5Fc93290AF034899cC10423316854) |
 
 Based on [Context Markets](https://github.com/contextwtf/contracts) contracts, used under license.
